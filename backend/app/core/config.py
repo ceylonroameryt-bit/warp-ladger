@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ──────────────────────────────────────────────────
-    APP_ENV: Literal["development", "staging", "production"] = "development"
+    APP_ENV: Literal["development", "test", "staging", "production"] = "development"
     APP_NAME: str = "Warp Ladger"
     APP_VERSION: str = "0.1.0"
     APP_URL: str = "http://localhost:3000"
@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.APP_ENV == "development"
+
+    @property
+    def is_test(self) -> bool:
+        return self.APP_ENV == "test"
 
     @property
     def is_production(self) -> bool:
