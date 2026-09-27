@@ -15,9 +15,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface TrialBalanceLine {
   account_id: string;
@@ -38,29 +37,14 @@ interface TrialBalanceReport {
   lines: TrialBalanceLine[];
 }
 
-const DEMO_REPORT: TrialBalanceReport = {
+const EMPTY_REPORT: TrialBalanceReport = {
   as_of_date: new Date().toISOString().split("T")[0],
   generated_at: new Date().toISOString(),
-  total_debit: 116350.50,
-  total_credit: 116350.50,
+  total_debit: "0.00",
+  total_credit: "0.00",
   is_balanced: true,
   currency: "GBP",
-  lines: [
-    { account_id: "1", account_code: "1000", account_name: "Operating Bank Account", account_class: "ASSET", debit_balance: 45200.50, credit_balance: 0 },
-    { account_id: "2", account_code: "1100", account_name: "Accounts Receivable", account_class: "ASSET", debit_balance: 18450.00, credit_balance: 0 },
-    { account_id: "3", account_code: "1200", account_name: "Prepayments & Accrued Income", account_class: "ASSET", debit_balance: 2400.00, credit_balance: 0 },
-    { account_id: "4", account_code: "1500", account_name: "Office Equipment & Tech", account_class: "ASSET", debit_balance: 8500.00, credit_balance: 0 },
-    { account_id: "5", account_code: "2000", account_name: "Accounts Payable", account_class: "LIABILITY", debit_balance: 0, credit_balance: 12100.00 },
-    { account_id: "6", account_code: "2200", account_name: "VAT Output Tax", account_class: "LIABILITY", debit_balance: 0, credit_balance: 4560.00 },
-    { account_id: "7", account_code: "2210", account_name: "PAYE & NI Payable", account_class: "LIABILITY", debit_balance: 0, credit_balance: 3120.00 },
-    { account_id: "8", account_code: "3000", account_name: "Share Capital", account_class: "EQUITY", debit_balance: 0, credit_balance: 25000.00 },
-    { account_id: "9", account_code: "3200", account_name: "Retained Earnings", account_class: "EQUITY", debit_balance: 0, credit_balance: 14770.50 },
-    { account_id: "10", account_code: "4000", account_name: "General Consulting Sales", account_class: "REVENUE", debit_balance: 0, credit_balance: 42000.00 },
-    { account_id: "11", account_code: "4100", account_name: "Software License Revenue", account_class: "REVENUE", debit_balance: 0, credit_balance: 14800.00 },
-    { account_id: "12", account_code: "5000", account_name: "Direct Cost of Goods Sold", account_class: "EXPENSE", debit_balance: 12800.00, credit_balance: 0 },
-    { account_id: "13", account_code: "6000", account_name: "Rent & Office Rates", account_class: "EXPENSE", debit_balance: 12000.00, credit_balance: 0 },
-    { account_id: "14", account_code: "6100", account_name: "Salaries & Wages", account_class: "EXPENSE", debit_balance: 17000.00, credit_balance: 0 },
-  ],
+  lines: [],
 };
 
 function fmtCur(amount: number | string | undefined, currency = "GBP") {
@@ -70,33 +54,29 @@ function fmtCur(amount: number | string | undefined, currency = "GBP") {
 }
 
 function TrialBalanceContent() {
+  const { activeOrganisationId } = useOrganisation();
   const [asOfDate, setAsOfDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [report, setReport] = useState<TrialBalanceReport>(DEMO_REPORT);
-  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState<TrialBalanceReport>(EMPTY_REPORT);
+  const [loading, setLoading] = useState(true);
 
   const fetchReport = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/ledger/trial-balance?as_of_date=${asOfDate}`, {
-        headers,
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.lines) {
-          setReport(data);
-        }
+      const data = await api.get<TrialBalanceReport>(
+        `/api/v1/organisations/${activeOrganisationId}/ledger/trial-balance?as_of_date=${asOfDate}`
+      );
+      if (data && data.lines) {
+        setReport(data);
+      } else {
+        setReport(EMPTY_REPORT);
       }
     } catch (err) {
-      console.warn("Using demo trial balance report", err);
+      setReport(EMPTY_REPORT);
     } finally {
       setLoading(false);
     }
-  }, [asOfDate]);
+  }, [activeOrganisationId, asOfDate]);
 
   useEffect(() => {
     fetchReport();

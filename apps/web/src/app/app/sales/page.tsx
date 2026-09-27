@@ -12,15 +12,18 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import InvoiceStatusBadge from "@/components/InvoiceStatusBadge";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface DashStats {
   draft_count: number;
+  draft_total: string;
   awaiting_count: number;
+  awaiting_total: string;
   overdue_count: number;
-  invoiced_this_month: number;
+  overdue_total: string;
+  paid_count: number;
+  paid_total: string;
   currency: string;
 }
 
@@ -41,6 +44,7 @@ function fmt(v: number, currency = "GBP") {
 }
 
 export default function SalesDashboardPage() {
+  const { activeOrganisationId } = useOrganisation();
   const [stats, setStats] = useState<DashStats | null>(null);
   const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
   const [overdueInvoices, setOverdueInvoices] = useState<Invoice[]>([]);
@@ -48,47 +52,41 @@ export default function SalesDashboardPage() {
 
   useEffect(() => {
     async function load() {
+      if (!activeOrganisationId) {
+        setLoading(false);
+        return;
+      }
       try {
-        const [allRes, overdueRes] = await Promise.all([
-          fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/invoices?page_size=5&sort_by=created_at&sort_dir=desc`, {
-            credentials: "include",
-          }),
-          fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/invoices?status=OVERDUE&page_size=5`, {
-            credentials: "include",
-          }),
+        const [allData, overdueData, metricsData] = await Promise.all([
+          api.get<any>(`/api/v1/organisations/${activeOrganisationId}/invoices?page_size=5&sort_by=created_at&sort_dir=desc`).catch(() => ({ items: [] })),
+          api.get<any>(`/api/v1/organisations/${activeOrganisationId}/invoices?status=OVERDUE&page_size=5`).catch(() => ({ items: [] })),
+          api.get<any>(`/api/v1/organisations/${activeOrganisationId}/invoices/metrics`).catch(() => null),
         ]);
 
-        let allData: any = { items: [], total: 0 };
-        let overdueData: any = { items: [], total: 0 };
+        setRecentInvoices(allData?.items ?? []);
+        setOverdueInvoices(overdueData?.items ?? []);
 
-        if (allRes.ok) allData = await allRes.json();
-        if (overdueRes.ok) overdueData = await overdueRes.json();
-
-        setRecentInvoices(allData.items ?? []);
-        setOverdueInvoices(overdueData.items ?? []);
-
-        // Compute stats from available data
-        const drafts = (allData.items ?? []).filter((i: Invoice) => i.effective_status === "DRAFT");
-        const awaiting = (allData.items ?? []).filter((i: Invoice) =>
-          ["APPROVED", "SENT", "AWAITING_PAYMENT"].includes(i.effective_status)
-        );
-
-        setStats({
-          draft_count: drafts.length,
-          awaiting_count: awaiting.length,
-          overdue_count: overdueData.total ?? 0,
-          invoiced_this_month: 0,
-          currency: "GBP",
-        });
+        if (metricsData) {
+          setStats({
+            draft_count: metricsData.draft_count ?? 0,
+            draft_total: metricsData.draft_total ?? "0.00",
+            awaiting_count: metricsData.awaiting_payment_count ?? 0,
+            awaiting_total: metricsData.awaiting_payment_total ?? "0.00",
+            overdue_count: metricsData.overdue_count ?? 0,
+            overdue_total: metricsData.overdue_total ?? "0.00",
+            paid_count: metricsData.paid_count ?? 0,
+            paid_total: metricsData.paid_total ?? "0.00",
+            currency: "GBP",
+          });
+        }
       } catch {
         // ignore
       } finally {
         setLoading(false);
       }
     }
-    if (ORG_ID) load();
-    else setLoading(false);
-  }, []);
+    load();
+  }, [activeOrganisationId]);
 
   const statCards = [
     {
@@ -122,15 +120,15 @@ export default function SalesDashboardPage() {
       link: "/app/sales/invoices?status=OVERDUE",
     },
     {
-      title: "Total Invoiced This Month",
-      value: stats?.invoiced_this_month ?? 0,
+      title: "Total Paid",
+      value: stats?.paid_total ? parseFloat(stats.paid_total) : 0,
       type: "money",
       currency: stats?.currency ?? "GBP",
       icon: TrendingUp,
       color: "text-emerald-600",
       bg: "bg-emerald-50",
       border: "border-emerald-200",
-      link: "/app/sales/invoices",
+      link: "/app/sales/invoices?status=PAID",
     },
   ];
 

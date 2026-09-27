@@ -18,9 +18,8 @@ import {
   Info,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface Contact {
   id: string;
@@ -54,6 +53,7 @@ function fmt(n: number | string | undefined, curr = "GBP") {
 function RecordPaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { activeOrganisationId } = useOrganisation();
 
   // URL query pre-fills
   const initialType = searchParams.get("type") === "OUTGOING" ? "OUTGOING" : "INCOMING";
@@ -84,28 +84,22 @@ function RecordPaymentContent() {
 
   // 1. Fetch Contacts & Bank Accounts
   useEffect(() => {
+    if (!activeOrganisationId) return;
     async function loadInitialData() {
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-        const headers: Record<string, string> = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
-
-        // Fetch contacts
         const contactTypeFilter = paymentType === "INCOMING" ? "CUSTOMER" : "SUPPLIER";
-        const cRes = await fetch(
-          `${API_BASE}/api/v1/organisations/${ORG_ID}/contacts?contact_type=${contactTypeFilter}&limit=100`,
-          { headers }
+        const cData = await api.get<any>(
+          `/api/v1/organisations/${activeOrganisationId}/contacts?contact_type=${contactTypeFilter}&limit=100`
         );
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          setContacts(cData.items || []);
+        if (cData && cData.items) {
+          setContacts(cData.items);
         }
 
-        // Fetch bank accounts
-        const bRes = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/bank-accounts`, { headers });
-        if (bRes.ok) {
-          const bData = await bRes.json();
-          setBankAccounts(bData || []);
+        const bData = await api.get<BankAccount[]>(
+          `/api/v1/organisations/${activeOrganisationId}/bank-accounts`
+        );
+        if (bData && Array.isArray(bData)) {
+          setBankAccounts(bData);
           const def = bData.find((b: BankAccount) => b.is_default);
           if (def && !bankAccountId) setBankAccountId(def.id);
         }
@@ -114,11 +108,11 @@ function RecordPaymentContent() {
       }
     }
     loadInitialData();
-  }, [paymentType]);
+  }, [activeOrganisationId, paymentType]);
 
   // 2. Fetch Open Invoices/Bills when Contact changes
   useEffect(() => {
-    if (!contactId) {
+    if (!contactId || !activeOrganisationId) {
       setOpenDocuments([]);
       setAllocations({});
       return;
@@ -127,18 +121,12 @@ function RecordPaymentContent() {
     async function loadOpenDocuments() {
       setLoading(true);
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-        const headers: Record<string, string> = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
-
         if (paymentType === "INCOMING") {
-          const res = await fetch(
-            `${API_BASE}/api/v1/organisations/${ORG_ID}/invoices?customer_id=${contactId}&status=APPROVED,AWAITING_PAYMENT,PARTIALLY_PAID&limit=50`,
-            { headers }
+          const data = await api.get<any>(
+            `/api/v1/organisations/${activeOrganisationId}/invoices?customer_id=${contactId}&status=APPROVED,AWAITING_PAYMENT,PARTIALLY_PAID&limit=50`
           );
-          if (res.ok) {
-            const data = await res.json();
-            const docs: OpenDocument[] = (data.items || []).map((inv: any) => ({
+          if (data && data.items) {
+            const docs: OpenDocument[] = data.items.map((inv: any) => ({
               id: inv.id,
               document_number: inv.invoice_number,
               date: inv.issue_date,
@@ -149,7 +137,6 @@ function RecordPaymentContent() {
             }));
             setOpenDocuments(docs);
 
-            // Pre-allocate if initialInvoiceId specified
             if (initialInvoiceId) {
               const target = docs.find((d) => d.id === initialInvoiceId);
               if (target) {
@@ -159,13 +146,11 @@ function RecordPaymentContent() {
             }
           }
         } else {
-          const res = await fetch(
-            `${API_BASE}/api/v1/organisations/${ORG_ID}/bills?supplier_id=${contactId}&status=APPROVED,PARTIALLY_PAID&limit=50`,
-            { headers }
+          const data = await api.get<any>(
+            `/api/v1/organisations/${activeOrganisationId}/bills?supplier_id=${contactId}&status=APPROVED,PARTIALLY_PAID&limit=50`
           );
-          if (res.ok) {
-            const data = await res.json();
-            const docs: OpenDocument[] = (data.items || []).map((bill: any) => ({
+          if (data && data.items) {
+            const docs: OpenDocument[] = data.items.map((bill: any) => ({
               id: bill.id,
               document_number: bill.internal_bill_number || bill.supplier_invoice_number,
               date: bill.bill_date,
@@ -176,7 +161,6 @@ function RecordPaymentContent() {
             }));
             setOpenDocuments(docs);
 
-            // Pre-allocate if initialBillId specified
             if (initialBillId) {
               const target = docs.find((d) => d.id === initialBillId);
               if (target) {
@@ -192,9 +176,8 @@ function RecordPaymentContent() {
         setLoading(false);
       }
     }
-
     loadOpenDocuments();
-  }, [contactId, paymentType, initialInvoiceId, initialBillId]);
+  }, [activeOrganisationId, contactId, paymentType, initialInvoiceId, initialBillId]);
 
   // Handle single allocation change
   const handleAllocationChange = (docId: string, val: string, maxDue: number) => {
@@ -234,14 +217,15 @@ function RecordPaymentContent() {
       return;
     }
 
+    if (!activeOrganisationId) {
+      setError("No active organisation selected.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       // Format allocations payload
       const allocPayload = Object.entries(allocations)
         .filter(([_, amt]) => amt > 0)
@@ -266,17 +250,7 @@ function RecordPaymentContent() {
         allocations: allocPayload,
       };
 
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/payments`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || "Failed to record payment");
-      }
-
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/payments`, payload);
       router.push("/app/payments");
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred while saving payment.");

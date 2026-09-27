@@ -70,8 +70,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # Section 32: camera=(self) allows trusted same-origin photo capture for Smart Document capture
         response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=()"
+            "camera=(self), microphone=(), geolocation=(), payment=()"
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
@@ -88,6 +89,59 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "max-age=31536000; includeSubDomains; preload"
             )
         return response
+
+
+# ─── CSRF Protection Middleware (Section 28) ─────────────────
+class CSRFProtectionMiddleware(BaseHTTPMiddleware):
+    """
+    Enforces CSRF protection for cookie-authenticated browser requests.
+    Validates Origin/Referer against allowed origins on POST, PUT, PATCH, DELETE.
+    """
+
+    SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+    EXEMPT_PATHS = {"/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"}
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.method in self.SAFE_METHODS or request.url.path in self.EXEMPT_PATHS:
+            return await call_next(request)
+
+        # Only apply CSRF check if authenticated via cookie
+        has_auth_cookie = bool(request.cookies.get("wl_access_token"))
+        if not has_auth_cookie:
+            return await call_next(request)
+
+        # Check Origin or Referer
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+
+        from app.core.config import settings
+        from urllib.parse import urlparse
+
+        allowed_hosts = set(settings.ALLOWED_HOSTS)
+        allowed_origins = set(settings.CORS_ORIGINS)
+
+        # Extract origin from referer if origin header omitted
+        req_origin = origin
+        if not req_origin and referer:
+            parsed = urlparse(referer)
+            req_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+        if req_origin:
+            parsed_origin = urlparse(req_origin)
+            is_allowed = (
+                req_origin in allowed_origins
+                or parsed_origin.hostname in allowed_hosts
+                or parsed_origin.hostname in ("localhost", "127.0.0.1", "testserver")
+            )
+            if not is_allowed:
+                log.warning("csrf_origin_mismatch", origin=req_origin, path=request.url.path)
+                from starlette.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF verification failed: origin not authorized."},
+                )
+
+        return await call_next(request)
 
 
 # ─── Trailing Slash Normalization Middleware ─────────────────
@@ -108,4 +162,5 @@ class TrailingSlashMiddleware(BaseHTTPMiddleware):
                     request.scope["path"] = path + "/"
                     break
         return await call_next(request)
+
 

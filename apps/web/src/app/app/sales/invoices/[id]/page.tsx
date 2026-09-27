@@ -20,9 +20,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import InvoiceStatusBadge from "@/components/InvoiceStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface InvoiceLine {
   id: string;
@@ -313,24 +313,8 @@ function InvoiceDetailContent() {
   const [notice, setNotice] = useState(searchParams.get("new") === "1" ? "Invoice created successfully!" : "");
   const [actionErr, setActionErr] = useState("");
 
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0 && orgs[0].id) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-    loadOrg();
-  }, []);
+  const { activeOrganisationId } = useOrganisation();
+  const activeOrgId = activeOrganisationId || "";
 
   async function loadInvoice() {
     if (!activeOrgId) return;

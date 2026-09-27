@@ -8,9 +8,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 import CustomerSelector from "@/components/CustomerSelector";
 import InvoiceLineEditor, { LineItem, TaxRate } from "@/components/InvoiceLineEditor";
 import InvoiceTotalsPanel from "@/components/InvoiceTotalsPanel";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 function todayIso() {
   return new Date().toISOString().split("T")[0];
@@ -59,24 +59,8 @@ export default function NewInvoicePage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successId, setSuccessId] = useState("");
 
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0 && orgs[0].id) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-    loadOrg();
-  }, []);
+  const { activeOrganisationId } = useOrganisation();
+  const activeOrgId = activeOrganisationId || "";
 
   useEffect(() => {
     async function loadMeta() {

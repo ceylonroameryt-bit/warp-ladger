@@ -36,22 +36,16 @@ async def upload_file(
     membership: OrgMembership,
     upload: UploadFile = FastAPIFile(...),
 ):
-    content_type = upload.content_type or ""
-    # Normalise filename extension if content-type header is ambiguous
-    filename = upload.filename or "unknown"
-    if filename.lower().endswith(".heic") and content_type in ("", "application/octet-stream"):
-        content_type = "image/heic"
-    elif filename.lower().endswith(".heif") and content_type in ("", "application/octet-stream"):
-        content_type = "image/heif"
-
-    if content_type not in ALLOWED_CONTENT_TYPES:
-        from app.core.exceptions import ValidationFailedError
-        raise ValidationFailedError(f"File type '{content_type}' is not allowed.")
-
+    raw_content_type = upload.content_type or ""
+    raw_filename = upload.filename or "unknown"
     data = await upload.read()
-    if len(data) > MAX_FILE_SIZE:
-        from app.core.exceptions import ValidationFailedError
-        raise ValidationFailedError("File exceeds maximum size of 25 MB.")
+
+    from app.files.security import FileSecurityService
+    filename, content_type, sha256 = await FileSecurityService.validate_file_upload(
+        data=data,
+        raw_filename=raw_filename,
+        client_content_type=raw_content_type,
+    )
 
     storage = get_storage_backend()
     key = make_storage_key(org_id, filename)

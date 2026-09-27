@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, AlertCircle, CheckCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface TaxRate {
   id: string;
@@ -25,6 +25,9 @@ const TAX_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function TaxRatesSettingsPage() {
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
+
   const [rates, setRates] = useState<TaxRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,11 +43,14 @@ export default function TaxRatesSettingsPage() {
   const [createErr, setCreateErr] = useState("");
 
   async function loadRates() {
-    if (!ORG_ID) return;
+    if (!orgId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(
-        `${API_BASE}/api/v1/organisations/${ORG_ID}/tax-rates?active_only=false`,
+        `${API_BASE}/api/v1/organisations/${orgId}/tax-rates?active_only=false`,
         { credentials: "include" }
       );
       if (res.ok) setRates(await res.json());
@@ -55,17 +61,18 @@ export default function TaxRatesSettingsPage() {
     }
   }
 
-  useEffect(() => { loadRates(); }, []);
+  useEffect(() => { loadRates(); }, [orgId]);
 
   async function handleCreate() {
     if (!newName.trim() || !newCode.trim()) {
       setCreateErr("Name and code are required.");
       return;
     }
+    if (!orgId) return;
     setCreating(true); setCreateErr("");
     try {
       const res = await fetch(
-        `${API_BASE}/api/v1/organisations/${ORG_ID}/tax-rates`,
+        `${API_BASE}/api/v1/organisations/${orgId}/tax-rates`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -95,9 +102,10 @@ export default function TaxRatesSettingsPage() {
   }
 
   async function handleDeactivate(rateId: string) {
+    if (!orgId) return;
     try {
       await fetch(
-        `${API_BASE}/api/v1/organisations/${ORG_ID}/tax-rates/${rateId}`,
+        `${API_BASE}/api/v1/organisations/${orgId}/tax-rates/${rateId}`,
         { method: "DELETE", credentials: "include" }
       );
       setSuccess("Tax rate deactivated.");

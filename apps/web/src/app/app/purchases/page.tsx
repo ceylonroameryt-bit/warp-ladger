@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import BillStatusBadge from "@/components/BillStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface Metrics {
   awaiting_approval_count: number;
@@ -62,51 +62,33 @@ function fmtDate(d: string | undefined) {
 }
 
 export default function PurchasesDashboardPage() {
+  const { activeOrganisationId } = useOrganisation();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [recentBills, setRecentBills] = useState<BillItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
 
   useEffect(() => {
-    async function init() {
-      let orgId = ORG_ID;
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            orgId = orgs[0].id;
-            setActiveOrgId(orgId);
-          }
-        }
-      } catch {
-        // Fallback to default ORG_ID
-      }
-
-      if (!orgId) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      Promise.all([
-        fetch(`${API_BASE}/api/v1/organisations/${orgId}/bills/metrics`, { credentials: "include" })
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-        fetch(`${API_BASE}/api/v1/organisations/${orgId}/bills?page=1&page_size=8`, {
-          credentials: "include",
-        })
-          .then((r) => (r.ok ? r.json() : { items: [] }))
-          .catch(() => ({ items: [] })),
-      ]).then(([metricData, billsData]) => {
-        setMetrics(metricData);
-        setRecentBills(billsData.items || []);
-        setLoading(false);
-      });
+    if (!activeOrganisationId) {
+      setLoading(false);
+      return;
     }
 
-    init();
-  }, []);
+    setLoading(true);
+    Promise.all([
+      fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/bills/metrics`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/bills?page=1&page_size=8`, {
+        credentials: "include",
+      })
+        .then((r) => (r.ok ? r.json() : { items: [] }))
+        .catch(() => ({ items: [] })),
+    ]).then(([metricData, billsData]) => {
+      setMetrics(metricData);
+      setRecentBills(billsData?.items || []);
+      setLoading(false);
+    });
+  }, [activeOrganisationId]);
 
   return (
     <DashboardLayout>

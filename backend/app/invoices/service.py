@@ -437,6 +437,10 @@ class InvoiceService:
 
         await db.flush()
 
+        # ── General Ledger Posting ────────────────────────────
+        from app.ledger.posting_service import AccountingPostingService
+        await AccountingPostingService.post_invoice_to_ledger(db, invoice, user_id)
+
         await AuditService.log_static(
             db,
             action="INVOICE_APPROVED",
@@ -491,6 +495,11 @@ class InvoiceService:
         invoice.void_reason = reason
 
         await db.flush()
+
+        # ── General Ledger Reversal ───────────────────────────
+        from app.ledger.posting_service import AccountingPostingService
+        await AccountingPostingService.reverse_invoice_journal(db, invoice, user_id, reason)
+
         await AuditService.log_static(
             db,
             action="INVOICE_VOIDED",
@@ -647,3 +656,67 @@ class InvoiceService:
         )
         await db.refresh(delivery)
         return delivery
+
+    # ── Invoice Metrics ───────────────────────────────────────
+    @staticmethod
+    async def get_metrics(db: AsyncSession, org_id: uuid.UUID) -> dict:
+        """
+        Calculate invoice metrics server-side using Decimal:
+        - draft_count, draft_total
+        - awaiting_payment_count, awaiting_payment_total
+        - overdue_count, overdue_total
+        - paid_count, paid_total
+        """
+        now = datetime.now(UTC)
+        query = select(Invoice).where(
+            Invoice.organisation_id == org_id,
+            Invoice.status != InvoiceStatus.VOID,
+        )
+        res = await db.execute(query)
+        invoices = res.scalars().all()
+
+        draft_count = 0
+        draft_total = Decimal("0.00")
+        awaiting_count = 0
+        awaiting_total = Decimal("0.00")
+        overdue_count = 0
+        overdue_total = Decimal("0.00")
+        paid_count = 0
+        paid_total = Decimal("0.00")
+
+        for inv in invoices:
+            total = Decimal(str(inv.total or "0.00"))
+            amount_due = Decimal(str(inv.amount_due or "0.00"))
+            if inv.status == InvoiceStatus.DRAFT:
+                draft_count += 1
+                draft_total += total
+            elif inv.status == InvoiceStatus.PAID:
+                paid_count += 1
+                paid_total += total
+            elif inv.status in (
+                InvoiceStatus.APPROVED,
+                InvoiceStatus.SENT,
+                InvoiceStatus.AWAITING_PAYMENT,
+                InvoiceStatus.PARTIALLY_PAID,
+            ):
+                due = inv.due_date
+                if due and due.tzinfo is None:
+                    due = due.replace(tzinfo=UTC)
+                if due and now > due and amount_due > Decimal("0.00"):
+                    overdue_count += 1
+                    overdue_total += amount_due
+                else:
+                    awaiting_count += 1
+                    awaiting_total += amount_due
+
+        return {
+            "draft_count": draft_count,
+            "draft_total": f"{draft_total:.2f}",
+            "awaiting_payment_count": awaiting_count,
+            "awaiting_payment_total": f"{awaiting_total:.2f}",
+            "overdue_count": overdue_count,
+            "overdue_total": f"{overdue_total:.2f}",
+            "paid_count": paid_count,
+            "paid_total": f"{paid_total:.2f}",
+        }
+

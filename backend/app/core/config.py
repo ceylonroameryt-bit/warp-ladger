@@ -145,6 +145,40 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
 
+    def validate_production_environment(self) -> None:
+        """Enforces Section 62: Fail startup for dangerous production configuration."""
+        if not self.is_production:
+            return
+
+        errors: list[str] = []
+
+        if self.SECRET_KEY in ("dev-secret-key-change-in-production", "change-me", "") or len(self.SECRET_KEY) < 32:
+            errors.append("SECRET_KEY is insecure or default; must be at least 32 characters in production.")
+
+        if not self.DATABASE_URL or "sqlite" in self.DATABASE_URL:
+            errors.append("Production requires a valid PostgreSQL DATABASE_URL (SQLite is prohibited).")
+
+        if "*" in self.CORS_ORIGINS or not self.CORS_ORIGINS:
+            errors.append("Wildcard CORS_ORIGINS is prohibited with cookie authentication in production.")
+
+        if "*" in self.ALLOWED_HOSTS or not self.ALLOWED_HOSTS:
+            errors.append("Wildcard ALLOWED_HOSTS is prohibited in production.")
+
+        if self.STORAGE_BACKEND == "memory":
+            errors.append("STORAGE_BACKEND cannot be 'memory' in production.")
+
+        if self.EMAIL_BACKEND == "console":
+            errors.append("EMAIL_BACKEND cannot be 'console' in production.")
+
+        if self.DOCUMENT_PROVIDER.lower() in ("fake", "mock"):
+            errors.append("DOCUMENT_PROVIDER cannot be 'fake' in production (Section 45).")
+
+        if errors:
+            raise RuntimeError(
+                "CRITICAL: Production startup failed due to configuration vulnerabilities:\n"
+                + "\n".join(f"  - {err}" for err in errors)
+            )
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -152,3 +186,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

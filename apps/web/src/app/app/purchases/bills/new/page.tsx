@@ -24,8 +24,9 @@ import BillLineEditor, {
   calcBillLine,
 } from "@/components/BillLineEditor";
 
+import { useOrganisation } from "@/contexts/OrganisationContext";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 function todayIso() {
   return new Date().toISOString().split("T")[0];
@@ -106,47 +107,28 @@ export default function NewBillPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
 
   // Load Tax Rates and Payment Terms with Dynamic Org Resolution
   useEffect(() => {
-    async function init() {
-      let org = ORG_ID;
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            org = orgs[0].id;
-            setActiveOrgId(org);
-          }
-        }
-      } catch {
-        // Fallback
+    if (!orgId) return;
+
+    Promise.all([
+      fetch(`${API_BASE}/api/v1/organisations/${orgId}/tax-rates`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []),
+      fetch(`${API_BASE}/api/v1/organisations/${orgId}/payment-terms`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []),
+    ]).then(([taxes, terms]) => {
+      setTaxRates(taxes);
+      if (taxes.length > 0) {
+        setLines((prev) => prev.map((l) => ({ ...l, tax_rate_id: taxes[0].id })));
       }
-
-      if (!org) return;
-
-      Promise.all([
-        fetch(`${API_BASE}/api/v1/organisations/${org}/tax-rates`, { credentials: "include" })
-          .then((r) => (r.ok ? r.json() : []))
-          .catch(() => []),
-        fetch(`${API_BASE}/api/v1/organisations/${org}/payment-terms`, { credentials: "include" })
-          .then((r) => (r.ok ? r.json() : []))
-          .catch(() => []),
-      ]).then(([taxes, terms]) => {
-        setTaxRates(taxes);
-        if (taxes.length > 0) {
-          setLines((prev) => prev.map((l) => ({ ...l, tax_rate_id: taxes[0].id })));
-        }
-        setPaymentTerms(Array.isArray(terms) ? terms : terms.items || []);
-      });
-    }
-
-    init();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
+      setPaymentTerms(Array.isArray(terms) ? terms : terms.items || []);
+    });
+  }, [orgId]);
 
   // Update payment terms when supplier is selected
   useEffect(() => {
@@ -478,7 +460,7 @@ export default function NewBillPage() {
                     Supplier <span className="text-rose-500">*</span>
                   </label>
                   <SupplierSelector
-                    orgId={ORG_ID}
+                    orgId={orgId}
                     value={supplier}
                     onChange={setSupplier}
                     error={fieldErrors.supplier}

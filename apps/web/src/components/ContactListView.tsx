@@ -47,82 +47,22 @@ interface Contact {
   reference?: string;
 }
 
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
+
 interface ContactListViewProps {
   initialType?: "CUSTOMER" | "SUPPLIER" | "BOTH" | "ALL";
   pageTitle: string;
   subtitle: string;
 }
 
-const DEMO_CONTACTS: Contact[] = [
-  {
-    id: "c1-apex",
-    contact_type: "CUSTOMER",
-    business_name: "Apex Innovations Ltd",
-    legal_name: "Apex Innovations Limited",
-    email: "accounts@apexinnovations.co.uk",
-    phone: "+44 20 7946 0912",
-    primary_contact_name: "Jane Doe",
-    primary_contact_email: "jane@apexinnovations.co.uk",
-    payment_terms_name: "30 days",
-    status: "ACTIVE",
-    currency: "GBP",
-    reference: "CUS-00128",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "c2-quickparts",
-    contact_type: "SUPPLIER",
-    business_name: "Quick Parts Supply Co",
-    legal_name: "Quick Parts International Ltd",
-    email: "billing@quickparts.co.uk",
-    phone: "+44 161 496 0872",
-    primary_contact_name: "Mark Reynolds",
-    primary_contact_email: "mark@quickparts.co.uk",
-    payment_terms_name: "14 days",
-    status: "ACTIVE",
-    currency: "GBP",
-    reference: "SUP-00045",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "c3-globaltrade",
-    contact_type: "BOTH",
-    business_name: "Global Trade Logistics",
-    legal_name: "Global Trade & Logistics PLC",
-    email: "finance@globaltrade.com",
-    phone: "+44 20 8946 0123",
-    primary_contact_name: "Sarah Jenkins",
-    primary_contact_email: "s.jenkins@globaltrade.com",
-    payment_terms_name: "End of next month",
-    status: "ACTIVE",
-    currency: "GBP",
-    reference: "PAR-00009",
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "c4-archived",
-    contact_type: "CUSTOMER",
-    business_name: "Old Legacy Ventures Ltd",
-    legal_name: "Old Legacy Ventures Limited",
-    email: "info@legacyventures.co.uk",
-    phone: "+44 113 496 0541",
-    primary_contact_name: "Tom Vance",
-    primary_contact_email: "tom@legacyventures.co.uk",
-    payment_terms_name: "Due immediately",
-    status: "ARCHIVED",
-    currency: "GBP",
-    reference: "CUS-00012",
-    updated_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-  },
-];
-
 export default function ContactListView({
   initialType = "ALL",
   pageTitle,
   subtitle,
 }: ContactListViewProps) {
-  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>(DEMO_CONTACTS);
+  const { activeOrganisationId } = useOrganisation();
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"ALL" | "CUSTOMER" | "SUPPLIER" | "BOTH" | "ARCHIVED">(
     initialType === "ALL" ? "ALL" : initialType
@@ -130,24 +70,6 @@ export default function ContactListView({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
-
-  // Fetch active organisation
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/");
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback to demo mode
-      }
-    }
-    loadOrg();
-  }, []);
 
   // Fetch live contacts from backend
   const fetchContacts = async (orgId: string) => {
@@ -158,30 +80,24 @@ export default function ContactListView({
       const searchParam = searchQuery.trim() ? `search=${encodeURIComponent(searchQuery.trim())}&` : "";
       const url = `/api/v1/organisations/${orgId}/contacts?${typeParam}${statusParam}${searchParam}page_size=100`;
 
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.items && data.items.length > 0) {
-          setContacts(data.items);
-        } else if (!searchQuery.trim() && activeTab === "ALL") {
-          // If the org has no contacts yet, show demo contacts as starting sample
-          setContacts(DEMO_CONTACTS);
-        } else {
-          setContacts([]);
-        }
+      const data = await api.get<any>(url);
+      if (data && data.items) {
+        setContacts(data.items);
+      } else {
+        setContacts([]);
       }
     } catch {
-      // Fallback
+      setContacts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (activeOrgId) {
-      fetchContacts(activeOrgId);
+    if (activeOrganisationId) {
+      fetchContacts(activeOrganisationId);
     }
-  }, [activeOrgId, activeTab, searchQuery]);
+  }, [activeOrganisationId, activeTab, searchQuery]);
 
   // Tab counts
   const allCount = contacts.filter((c) => c.status === "ACTIVE").length;
@@ -252,14 +168,14 @@ export default function ContactListView({
     );
     setActionMenuOpenId(null);
 
-    if (activeOrgId && !id.startsWith("c")) {
+    if (activeOrganisationId && !id.startsWith("c")) {
       try {
-        await fetch(`/api/v1/organisations/${activeOrgId}/contacts/${id}/${endpoint}`, {
+        await fetch(`/api/v1/organisations/${activeOrganisationId}/contacts/${id}/${endpoint}`, {
           method: "POST",
         });
       } catch {
         // Revert on failure
-        if (activeOrgId) fetchContacts(activeOrgId);
+        if (activeOrganisationId) fetchContacts(activeOrganisationId);
       }
     }
   };
@@ -271,10 +187,10 @@ export default function ContactListView({
     );
     setSelectedIds(new Set());
 
-    if (activeOrgId) {
+    if (activeOrganisationId) {
       for (const id of idsToArchive) {
         if (!id.startsWith("c")) {
-          fetch(`/api/v1/organisations/${activeOrgId}/contacts/${id}/archive`, { method: "POST" }).catch(() => {});
+          fetch(`/api/v1/organisations/${activeOrganisationId}/contacts/${id}/archive`, { method: "POST" }).catch(() => {});
         }
       }
     }
@@ -303,7 +219,7 @@ export default function ContactListView({
 
   return (
     <div className="space-y-5">
-      {/* ── Page Header (Xero Title + Action Buttons) ── */}
+      {/* ── Page Header (Title + Action Buttons) ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{pageTitle}</h1>
@@ -336,7 +252,7 @@ export default function ContactListView({
         </div>
       </div>
 
-      {/* ── Summary KPI Cards (Xero-style KPI Metrics) ── */}
+      {/* ── Summary KPI Cards (KPI Metrics) ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
@@ -393,7 +309,7 @@ export default function ContactListView({
 
       {/* ── Main Data Workspace Card ── */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-        {/* Horizontal Navigation Sub-Tabs (Signature Xero Contact Tabs) */}
+        {/* Horizontal Navigation Sub-Tabs */}
         <div className="flex items-center border-b border-slate-200 px-4 pt-1 bg-white overflow-x-auto">
           {[
             { id: "ALL", label: "All Contacts", count: allCount },

@@ -10,24 +10,19 @@ import {
   ShieldCheck,
   AlertTriangle,
   RefreshCw,
-  Building2,
-  TrendingUp,
-  FileSpreadsheet,
   CheckCircle2,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface ReportLineItem {
-  account_id: string;
+  account_id?: string;
   account_code: string;
   account_name: string;
   account_class: string;
   subtype?: string;
   amount: number | string;
-  comparison_amount?: number | string | null;
 }
 
 interface BalanceSheetData {
@@ -55,44 +50,27 @@ interface BalanceSheetData {
   generated_at: string;
 }
 
-const DEMO_BALANCE_SHEET: BalanceSheetData = {
-  as_of_date: "2026-03-31",
-  comparison_as_of_date: "2025-12-31",
+const EMPTY_BALANCE_SHEET: BalanceSheetData = {
+  as_of_date: new Date().toISOString().split("T")[0],
   currency: "GBP",
-  fixed_assets: [
-    { account_id: "1", account_code: "1500", account_name: "Office Equipment & Tech", account_class: "ASSET", subtype: "FIXED_ASSET", amount: "18500.00", comparison_amount: "15000.00" },
-    { account_id: "2", account_code: "1510", account_name: "Computer Software & IP", account_class: "ASSET", subtype: "FIXED_ASSET", amount: "25000.00", comparison_amount: "25000.00" },
-  ],
-  total_fixed_assets: "43500.00",
-  current_assets: [
-    { account_id: "3", account_code: "1000", account_name: "Operating Bank Account (Barclays)", account_class: "ASSET", subtype: "CURRENT_ASSET", amount: "184650.50", comparison_amount: "142000.00" },
-    { account_id: "4", account_code: "1100", account_name: "Trade Accounts Receivable (Debtors)", account_class: "ASSET", subtype: "CURRENT_ASSET", amount: "52400.00", comparison_amount: "48000.00" },
-    { account_id: "5", account_code: "1200", account_name: "Prepayments & Accruals", account_class: "ASSET", subtype: "CURRENT_ASSET", amount: "4400.00", comparison_amount: "3500.00" },
-  ],
-  total_current_assets: "241450.50",
-  total_assets: "284950.50",
-  current_liabilities: [
-    { account_id: "6", account_code: "2000", account_name: "Trade Accounts Payable (Creditors)", account_class: "LIABILITY", subtype: "CURRENT_LIABILITY", amount: "22400.00", comparison_amount: "19500.00" },
-    { account_id: "7", account_code: "2200", account_name: "HMRC VAT Output Liability", account_class: "LIABILITY", subtype: "CURRENT_LIABILITY", amount: "14830.00", comparison_amount: "12100.00" },
-    { account_id: "8", account_code: "2210", account_name: "PAYE / National Insurance Payable", account_class: "LIABILITY", subtype: "CURRENT_LIABILITY", amount: "6720.00", comparison_amount: "6400.00" },
-  ],
-  total_current_liabilities: "43950.00",
-  non_current_liabilities: [
-    { account_id: "9", account_code: "2700", account_name: "Long-Term Bank Loan (5 Yr)", account_class: "LIABILITY", subtype: "NON_CURRENT_LIABILITY", amount: "20000.00", comparison_amount: "25000.00" },
-  ],
-  total_non_current_liabilities: "20000.00",
-  total_liabilities: "63950.00",
-  net_current_assets: "197500.50",
-  net_assets: "221000.50",
-  equity: [
-    { account_id: "10", account_code: "3000", account_name: "Ordinary Share Capital", account_class: "EQUITY", subtype: "EQUITY", amount: "50000.00", comparison_amount: "50000.00" },
-    { account_id: "11", account_code: "3200", account_name: "Historical Retained Earnings", account_class: "EQUITY", subtype: "EQUITY", amount: "112280.50", comparison_amount: "80000.00" },
-  ],
-  current_year_earnings: "58720.00",
-  total_equity: "221000.50",
-  total_liabilities_and_equity: "284950.50",
+  fixed_assets: [],
+  total_fixed_assets: "0.00",
+  current_assets: [],
+  total_current_assets: "0.00",
+  total_assets: "0.00",
+  current_liabilities: [],
+  total_current_liabilities: "0.00",
+  non_current_liabilities: [],
+  total_non_current_liabilities: "0.00",
+  total_liabilities: "0.00",
+  net_current_assets: "0.00",
+  net_assets: "0.00",
+  equity: [],
+  current_year_earnings: "0.00",
+  total_equity: "0.00",
+  total_liabilities_and_equity: "0.00",
   is_balanced: true,
-  equilibrium_discrepancy: "0.0000",
+  equilibrium_discrepancy: "0.00",
   generated_at: new Date().toISOString(),
 };
 
@@ -103,37 +81,71 @@ function fmtCur(amount: number | string | undefined | null, currency = "GBP") {
 }
 
 export default function BalanceSheetPage() {
-  const [asOfDate, setAsOfDate] = useState("2026-03-31");
-  const [comparisonDate, setComparisonDate] = useState("2025-12-31");
-  const [enableComparison, setEnableComparison] = useState(true);
-  const [report, setReport] = useState<BalanceSheetData>(DEMO_BALANCE_SHEET);
-  const [loading, setLoading] = useState(false);
+  const { activeOrganisation, activeOrganisationId } = useOrganisation();
+  const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split("T")[0]);
+  const [report, setReport] = useState<BalanceSheetData>(EMPTY_BALANCE_SHEET);
+  const [loading, setLoading] = useState(true);
 
   const fetchReport = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const url = `/api/v1/organisations/${activeOrganisationId}/reports/balance-sheet?as_of_date=${asOfDate}`;
+      const data = await api.get<any>(url);
 
-      let url = `${API_BASE}/api/v1/organisations/${ORG_ID}/reports/balance-sheet?as_of_date=${asOfDate}`;
-      if (enableComparison && comparisonDate) {
-        url += `&comparison_date=${comparisonDate}`;
-      }
+      if (data) {
+        const faLines = data.fixed_assets?.lines || [];
+        const caLines = data.current_assets?.lines || [];
+        const clLines = data.current_liabilities?.lines || [];
+        const nclLines = data.non_current_liabilities?.lines || [];
+        const eqLines = data.equity?.lines || [];
 
-      const res = await fetch(url, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.total_assets !== undefined) {
-          setReport(data);
-        }
+        const faSub = data.fixed_assets?.subtotal ?? "0.00";
+        const caSub = data.current_assets?.subtotal ?? "0.00";
+        const clSub = data.current_liabilities?.subtotal ?? "0.00";
+        const nclSub = data.non_current_liabilities?.subtotal ?? "0.00";
+
+        const caNum = parseFloat(String(caSub));
+        const clNum = parseFloat(String(clSub));
+        const netCurrent = (caNum - clNum).toFixed(2);
+
+        const totLiab = parseFloat(String(data.total_liabilities ?? "0"));
+        const totEq = parseFloat(String(data.total_equity ?? "0"));
+        const totLiabAndEq = (totLiab + totEq).toFixed(2);
+
+        setReport({
+          as_of_date: data.as_of_date || asOfDate,
+          comparison_as_of_date: data.comparison_as_of_date,
+          currency: data.currency || "GBP",
+          fixed_assets: faLines,
+          total_fixed_assets: faSub,
+          current_assets: caLines,
+          total_current_assets: caSub,
+          total_assets: data.total_assets ?? "0.00",
+          current_liabilities: clLines,
+          total_current_liabilities: clSub,
+          non_current_liabilities: nclLines,
+          total_non_current_liabilities: nclSub,
+          total_liabilities: data.total_liabilities ?? "0.00",
+          net_current_assets: netCurrent,
+          net_assets: data.net_assets ?? "0.00",
+          equity: eqLines,
+          current_year_earnings: data.current_year_earnings ?? "0.00",
+          total_equity: data.total_equity ?? "0.00",
+          total_liabilities_and_equity: totLiabAndEq,
+          is_balanced: Boolean(data.is_balanced),
+          equilibrium_discrepancy: data.balance_discrepancy ?? "0.00",
+          generated_at: data.generated_at || new Date().toISOString(),
+        });
+      } else {
+        setReport(EMPTY_BALANCE_SHEET);
       }
-    } catch (err) {
-      console.warn("Using demo Balance Sheet data", err);
+    } catch {
+      setReport(EMPTY_BALANCE_SHEET);
     } finally {
       setLoading(false);
     }
-  }, [asOfDate, comparisonDate, enableComparison]);
+  }, [activeOrganisationId, asOfDate]);
 
   useEffect(() => {
     fetchReport();
@@ -142,74 +154,75 @@ export default function BalanceSheetPage() {
   const handleExportCSV = () => {
     const rows = [
       ["Balance Sheet (Statement of Financial Position)"],
+      [`Entity: ${activeOrganisation?.name || "Warp Organisation"}`],
       [`As of: ${report.as_of_date}`],
       [`Currency: ${report.currency}`],
-      [`Equilibrium Status: ${report.is_balanced ? "PERFECTLY BALANCED" : "DISCREPANCY DETECTED"}`],
+      [`Balanced: ${report.is_balanced ? "YES" : "NO"}`],
       [],
-      ["Account Code", "Account Name", "Amount (£)", report.comparison_as_of_date ? `As of ${report.comparison_as_of_date} (£)` : ""],
+      ["Account Code", "Account Name", "Amount (£)"],
       ["FIXED ASSETS"],
       ...report.fixed_assets.map((item) => [
         item.account_code,
         `"${item.account_name.replace(/"/g, '""')}"`,
         Number(item.amount).toFixed(2),
-        item.comparison_amount ? Number(item.comparison_amount).toFixed(2) : "",
       ]),
-      ["TOTAL FIXED ASSETS", "", Number(report.total_fixed_assets).toFixed(2), ""],
+      ["TOTAL FIXED ASSETS", "", Number(report.total_fixed_assets).toFixed(2)],
       [],
       ["CURRENT ASSETS"],
       ...report.current_assets.map((item) => [
         item.account_code,
         `"${item.account_name.replace(/"/g, '""')}"`,
         Number(item.amount).toFixed(2),
-        item.comparison_amount ? Number(item.comparison_amount).toFixed(2) : "",
       ]),
-      ["TOTAL CURRENT ASSETS", "", Number(report.total_current_assets).toFixed(2), ""],
-      ["TOTAL ASSETS", "", Number(report.total_assets).toFixed(2), ""],
+      ["TOTAL CURRENT ASSETS", "", Number(report.total_current_assets).toFixed(2)],
+      ["TOTAL ASSETS", "", Number(report.total_assets).toFixed(2)],
       [],
       ["CURRENT LIABILITIES"],
       ...report.current_liabilities.map((item) => [
         item.account_code,
         `"${item.account_name.replace(/"/g, '""')}"`,
         Number(item.amount).toFixed(2),
-        item.comparison_amount ? Number(item.comparison_amount).toFixed(2) : "",
       ]),
-      ["TOTAL CURRENT LIABILITIES", "", Number(report.total_current_liabilities).toFixed(2), ""],
+      ["TOTAL CURRENT LIABILITIES", "", Number(report.total_current_liabilities).toFixed(2)],
       [],
       ["NON-CURRENT LIABILITIES"],
       ...report.non_current_liabilities.map((item) => [
         item.account_code,
         `"${item.account_name.replace(/"/g, '""')}"`,
         Number(item.amount).toFixed(2),
-        item.comparison_amount ? Number(item.comparison_amount).toFixed(2) : "",
       ]),
-      ["TOTAL NON-CURRENT LIABILITIES", "", Number(report.total_non_current_liabilities).toFixed(2), ""],
-      ["TOTAL LIABILITIES", "", Number(report.total_liabilities).toFixed(2), ""],
-      ["NET CURRENT ASSETS", "", Number(report.net_current_assets).toFixed(2), ""],
-      ["TOTAL NET ASSETS", "", Number(report.net_assets).toFixed(2), ""],
+      ["TOTAL NON-CURRENT LIABILITIES", "", Number(report.total_non_current_liabilities).toFixed(2)],
+      ["TOTAL LIABILITIES", "", Number(report.total_liabilities).toFixed(2)],
+      ["NET CURRENT ASSETS", "", Number(report.net_current_assets).toFixed(2)],
+      ["TOTAL NET ASSETS", "", Number(report.net_assets).toFixed(2)],
       [],
-      ["CAPITAL & RESERVES (EQUITY)"],
+      ["EQUITY"],
       ...report.equity.map((item) => [
         item.account_code,
         `"${item.account_name.replace(/"/g, '""')}"`,
         Number(item.amount).toFixed(2),
-        item.comparison_amount ? Number(item.comparison_amount).toFixed(2) : "",
       ]),
-      ["CURRENT YEAR EARNINGS", "Automated P&L Integration", Number(report.current_year_earnings).toFixed(2), ""],
-      ["TOTAL EQUITY", "", Number(report.total_equity).toFixed(2), ""],
-      ["TOTAL LIABILITIES & EQUITY", "", Number(report.total_liabilities_and_equity).toFixed(2), ""],
+      ["CURRENT YEAR EARNINGS", "Current Period Net Earnings", Number(report.current_year_earnings).toFixed(2)],
+      ["TOTAL EQUITY", "", Number(report.total_equity).toFixed(2)],
+      ["TOTAL LIABILITIES & EQUITY", "", Number(report.total_liabilities_and_equity).toFixed(2)],
     ];
 
     const csvContent = "data:text/csv;charset=utf-8," + rows.map((e) => e.join(",")).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `balance_sheet_as_of_${report.as_of_date}.csv`);
+    link.setAttribute("download", `balance_sheet_${report.as_of_date}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const hasComparison = enableComparison && report.comparison_as_of_date;
+  const hasLines =
+    report.fixed_assets.length > 0 ||
+    report.current_assets.length > 0 ||
+    report.current_liabilities.length > 0 ||
+    report.non_current_liabilities.length > 0 ||
+    report.equity.length > 0;
 
   return (
     <DashboardLayout>
@@ -229,7 +242,7 @@ export default function BalanceSheetPage() {
               Balance Sheet (Statement of Financial Position)
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Cumulative financial state conforming to UK Companies House & FRS 102 Section 4 guidelines.
+              Snapshot of assets, liabilities, and equity derived directly from general ledger balances.
             </p>
           </div>
 
@@ -253,7 +266,7 @@ export default function BalanceSheetPage() {
 
         {/* ── CONTROLS TOOLBAR ── */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-slate-600">As of Date:</span>
               <input
@@ -264,30 +277,12 @@ export default function BalanceSheetPage() {
                 className="bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#0073B7]"
               />
             </div>
-
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={enableComparison}
-                  onChange={(e) => setEnableComparison(e.target.checked)}
-                  className="rounded border-slate-300 text-[#0073B7] focus:ring-[#0073B7]"
-                />
-                <span className="font-medium text-slate-700">Compare Prior Period:</span>
-              </label>
-              {enableComparison && (
-                <input
-                  type="date"
-                  aria-label="Prior Period Comparison Date"
-                  value={comparisonDate}
-                  onChange={(e) => setComparisonDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-md px-2 py-1 font-mono text-slate-800"
-                />
-              )}
-            </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 font-medium">
+              Basis: <span className="font-bold text-slate-800">Accrual</span>
+            </span>
             <button
               onClick={fetchReport}
               disabled={loading}
@@ -316,20 +311,19 @@ export default function BalanceSheetPage() {
             <div>
               <p className="font-bold">
                 {report.is_balanced
-                  ? "Ledger Equilibrium Verified: Total Assets ≡ Total Liabilities & Equity"
+                  ? "Double-Entry Balance Verified: Total Assets = Total Liabilities & Equity"
                   : "Attention: Ledger Equilibrium Discrepancy Detected"}
               </p>
               <p className="text-[11px] text-slate-600">
-                Total Assets: <span className="font-mono font-semibold">{fmtCur(report.total_assets)}</span> ·
-                Total Liabilities & Equity: <span className="font-mono font-semibold">{fmtCur(report.total_liabilities_and_equity)}</span> ·
-                Variance: <span className="font-mono font-bold">{fmtCur(report.equilibrium_discrepancy)}</span>
+                Total Assets: <span className="font-mono font-semibold">{fmtCur(report.total_assets, report.currency)}</span> ·
+                Total Liabilities & Equity: <span className="font-mono font-semibold">{fmtCur(report.total_liabilities_and_equity, report.currency)}</span>
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 rounded-full font-bold bg-white/80 border text-[11px] shadow-2xs">
-              Net Assets: {fmtCur(report.net_assets)}
+              Net Assets: {fmtCur(report.net_assets, report.currency)}
             </span>
           </div>
         </div>
@@ -339,7 +333,7 @@ export default function BalanceSheetPage() {
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                Acme Corp UK Ltd — Statement of Financial Position
+                {activeOrganisation?.name || "Organisation"} — Statement of Financial Position
               </h2>
               <p className="text-xs text-slate-500">
                 As at {report.as_of_date} (Currency: {report.currency})
@@ -354,193 +348,153 @@ export default function BalanceSheetPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-100/70 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
-                  <th className="py-2.5 px-6 w-24">Code</th>
+                  <th className="py-2.5 px-6 w-28">Code</th>
                   <th className="py-2.5 px-4">Account Description</th>
-                  <th className="py-2.5 px-4 text-right">As at {report.as_of_date}</th>
-                  {hasComparison && (
-                    <th className="py-2.5 px-4 text-right text-slate-500">
-                      As at {report.comparison_as_of_date}
-                    </th>
-                  )}
+                  <th className="py-2.5 px-6 text-right">As at {report.as_of_date} ({report.currency})</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {!hasLines && !loading && (
+                  <tr>
+                    <td colSpan={3} className="py-12 text-center text-slate-400">
+                      No posted asset, liability, or equity transactions recorded as of this date.
+                    </td>
+                  </tr>
+                )}
+
                 {/* ── FIXED ASSETS ── */}
                 <tr className="bg-slate-50/80">
-                  <td colSpan={hasComparison ? 4 : 3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide">
+                  <td colSpan={3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide">
                     Fixed Assets (Non-Current)
                   </td>
                 </tr>
-                {report.fixed_assets.map((item) => (
-                  <tr key={item.account_id} className="hover:bg-sky-50/40 transition-colors">
+                {report.fixed_assets.map((item, idx) => (
+                  <tr key={item.account_id || idx} className="hover:bg-sky-50/40 transition-colors">
                     <td className="py-2.5 px-6 font-mono text-slate-500">{item.account_code}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-800">{item.account_name}</td>
-                    <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount)}</td>
-                    {hasComparison && (
-                      <td className="py-2.5 px-4 font-mono text-slate-600 text-right">{fmtCur(item.comparison_amount)}</td>
-                    )}
+                    <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount, report.currency)}</td>
                   </tr>
                 ))}
                 <tr className="bg-slate-100/60 font-bold border-t border-slate-200">
                   <td className="py-2.5 px-6 font-mono text-slate-500"></td>
                   <td className="py-2.5 px-4 text-slate-900">Total Fixed Assets</td>
-                  <td className="py-2.5 px-4 font-mono text-slate-900 text-right">{fmtCur(report.total_fixed_assets)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£40,000.00</td>}
+                  <td className="py-2.5 px-6 font-mono text-slate-900 text-right">{fmtCur(report.total_fixed_assets, report.currency)}</td>
                 </tr>
 
                 {/* ── CURRENT ASSETS ── */}
                 <tr className="bg-slate-50/80">
-                  <td colSpan={hasComparison ? 4 : 3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
+                  <td colSpan={3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
                     Current Assets
                   </td>
                 </tr>
-                {report.current_assets.map((item) => (
-                  <tr key={item.account_id} className="hover:bg-sky-50/40 transition-colors">
+                {report.current_assets.map((item, idx) => (
+                  <tr key={item.account_id || idx} className="hover:bg-sky-50/40 transition-colors">
                     <td className="py-2.5 px-6 font-mono text-slate-500">{item.account_code}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-800">{item.account_name}</td>
-                    <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount)}</td>
-                    {hasComparison && (
-                      <td className="py-2.5 px-4 font-mono text-slate-600 text-right">{fmtCur(item.comparison_amount)}</td>
-                    )}
+                    <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount, report.currency)}</td>
                   </tr>
                 ))}
                 <tr className="bg-slate-100/60 font-bold border-t border-slate-200">
                   <td className="py-2.5 px-6 font-mono text-slate-500"></td>
                   <td className="py-2.5 px-4 text-slate-900">Total Current Assets</td>
-                  <td className="py-2.5 px-4 font-mono text-slate-900 text-right">{fmtCur(report.total_current_assets)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£193,500.00</td>}
+                  <td className="py-2.5 px-6 font-mono text-slate-900 text-right">{fmtCur(report.total_current_assets, report.currency)}</td>
                 </tr>
 
                 {/* ── TOTAL ASSETS ── */}
                 <tr className="bg-sky-50/60 font-black border-t-2 border-b-2 border-sky-300 text-sky-950 text-sm">
                   <td className="py-3 px-6 font-mono"></td>
                   <td className="py-3 px-4">TOTAL ASSETS</td>
-                  <td className="py-3 px-4 font-mono text-right text-base font-black">{fmtCur(report.total_assets)}</td>
-                  {hasComparison && <td className="py-3 px-4 font-mono text-right text-sky-900">£233,500.00</td>}
+                  <td className="py-3 px-6 font-mono text-right text-base font-black">{fmtCur(report.total_assets, report.currency)}</td>
                 </tr>
 
                 {/* ── CURRENT LIABILITIES ── */}
                 <tr className="bg-slate-50/80">
-                  <td colSpan={hasComparison ? 4 : 3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
+                  <td colSpan={3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
                     Current Liabilities (Due within 1 Year)
                   </td>
                 </tr>
-                {report.current_liabilities.map((item) => (
-                  <tr key={item.account_id} className="hover:bg-sky-50/40 transition-colors">
+                {report.current_liabilities.map((item, idx) => (
+                  <tr key={item.account_id || idx} className="hover:bg-sky-50/40 transition-colors">
                     <td className="py-2.5 px-6 font-mono text-slate-500">{item.account_code}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-800">{item.account_name}</td>
-                    <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount)}</td>
-                    {hasComparison && (
-                      <td className="py-2.5 px-4 font-mono text-slate-600 text-right">{fmtCur(item.comparison_amount)}</td>
-                    )}
+                    <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount, report.currency)}</td>
                   </tr>
                 ))}
                 <tr className="bg-slate-100/60 font-bold border-t border-slate-200">
                   <td className="py-2.5 px-6 font-mono text-slate-500"></td>
                   <td className="py-2.5 px-4 text-slate-900">Total Current Liabilities</td>
-                  <td className="py-2.5 px-4 font-mono text-slate-900 text-right">{fmtCur(report.total_current_liabilities)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£38,000.00</td>}
+                  <td className="py-2.5 px-6 font-mono text-slate-900 text-right">{fmtCur(report.total_current_liabilities, report.currency)}</td>
                 </tr>
 
                 {/* ── NET CURRENT ASSETS ── */}
                 <tr className="bg-slate-50 font-bold border-t border-slate-200 text-slate-800">
                   <td className="py-2.5 px-6 font-mono"></td>
                   <td className="py-2.5 px-4">Net Current Assets (Working Capital)</td>
-                  <td className="py-2.5 px-4 font-mono text-right">{fmtCur(report.net_current_assets)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-right text-slate-600">£155,500.00</td>}
+                  <td className="py-2.5 px-6 font-mono text-right">{fmtCur(report.net_current_assets, report.currency)}</td>
                 </tr>
 
                 {/* ── NON-CURRENT LIABILITIES ── */}
                 <tr className="bg-slate-50/80">
-                  <td colSpan={hasComparison ? 4 : 3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
-                    Non-Current Liabilities (Due after 1 Year)
+                  <td colSpan={3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
+                    Non-Current Liabilities
                   </td>
                 </tr>
-                {report.non_current_liabilities.map((item) => (
-                  <tr key={item.account_id} className="hover:bg-sky-50/40 transition-colors">
+                {report.non_current_liabilities.map((item, idx) => (
+                  <tr key={item.account_id || idx} className="hover:bg-sky-50/40 transition-colors">
                     <td className="py-2.5 px-6 font-mono text-slate-500">{item.account_code}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-800">{item.account_name}</td>
-                    <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount)}</td>
-                    {hasComparison && (
-                      <td className="py-2.5 px-4 font-mono text-slate-600 text-right">{fmtCur(item.comparison_amount)}</td>
-                    )}
+                    <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount, report.currency)}</td>
                   </tr>
                 ))}
                 <tr className="bg-slate-100/60 font-bold border-t border-slate-200">
                   <td className="py-2.5 px-6 font-mono text-slate-500"></td>
                   <td className="py-2.5 px-4 text-slate-900">Total Non-Current Liabilities</td>
-                  <td className="py-2.5 px-4 font-mono text-slate-900 text-right">{fmtCur(report.total_non_current_liabilities)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£25,000.00</td>}
+                  <td className="py-2.5 px-6 font-mono text-slate-900 text-right">{fmtCur(report.total_non_current_liabilities, report.currency)}</td>
                 </tr>
 
                 {/* ── TOTAL LIABILITIES ── */}
-                <tr className="bg-slate-100 font-bold border-t border-slate-300">
+                <tr className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-900">
                   <td className="py-2.5 px-6 font-mono"></td>
-                  <td className="py-2.5 px-4 text-slate-900">TOTAL LIABILITIES</td>
-                  <td className="py-2.5 px-4 font-mono text-slate-900 text-right">{fmtCur(report.total_liabilities)}</td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£63,000.00</td>}
+                  <td className="py-2.5 px-4">TOTAL LIABILITIES</td>
+                  <td className="py-2.5 px-6 font-mono text-right font-bold">{fmtCur(report.total_liabilities, report.currency)}</td>
                 </tr>
 
-                {/* ── TOTAL NET ASSETS ── */}
-                <tr className="bg-emerald-50/70 font-black border-t-2 border-b-2 border-emerald-300 text-emerald-950 text-sm">
+                {/* ── NET ASSETS ── */}
+                <tr className="bg-sky-50/80 font-black border-t-2 border-b-2 border-sky-300 text-sky-950 text-sm">
                   <td className="py-3 px-6 font-mono"></td>
                   <td className="py-3 px-4">TOTAL NET ASSETS</td>
-                  <td className="py-3 px-4 font-mono text-right text-base text-emerald-800 font-black">{fmtCur(report.net_assets)}</td>
-                  {hasComparison && <td className="py-3 px-4 font-mono text-right text-emerald-700">£170,500.00</td>}
+                  <td className="py-3 px-6 font-mono text-right text-base font-black">{fmtCur(report.net_assets, report.currency)}</td>
                 </tr>
 
-                {/* ── EQUITY / CAPITAL & RESERVES ── */}
+                {/* ── EQUITY ── */}
                 <tr className="bg-slate-50/80">
-                  <td colSpan={hasComparison ? 4 : 3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
-                    Capital and Reserves (Equity)
+                  <td colSpan={3} className="py-2 px-6 font-bold text-slate-900 uppercase tracking-wide pt-4">
+                    Capital & Reserves (Equity)
                   </td>
                 </tr>
-                {report.equity.map((item) => (
-                  <tr key={item.account_id} className="hover:bg-sky-50/40 transition-colors">
+                {report.equity.map((item, idx) => (
+                  <tr key={item.account_id || idx} className="hover:bg-sky-50/40 transition-colors">
                     <td className="py-2.5 px-6 font-mono text-slate-500">{item.account_code}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-800">{item.account_name}</td>
-                    <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount)}</td>
-                    {hasComparison && (
-                      <td className="py-2.5 px-4 font-mono text-slate-600 text-right">{fmtCur(item.comparison_amount)}</td>
-                    )}
+                    <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(item.amount, report.currency)}</td>
                   </tr>
                 ))}
-                {/* Current Year Profit Line */}
-                <tr className="bg-sky-50/30 hover:bg-sky-50/60 transition-colors">
-                  <td className="py-2.5 px-6 font-mono text-sky-600 font-semibold">P&L</td>
-                  <td className="py-2.5 px-4 font-medium text-sky-900 flex items-center gap-1.5">
-                    Current Year Earnings
-                    <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-semibold">
-                      Automated
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 text-right">
-                    {fmtCur(report.current_year_earnings)}
-                  </td>
-                  {hasComparison && <td className="py-2.5 px-4 font-mono text-slate-600 text-right">£40,500.00</td>}
+                <tr className="hover:bg-sky-50/40 transition-colors">
+                  <td className="py-2.5 px-6 font-mono text-slate-500">—</td>
+                  <td className="py-2.5 px-4 font-medium text-slate-800">Current Year Earnings</td>
+                  <td className="py-2.5 px-6 font-mono font-semibold text-slate-900 text-right">{fmtCur(report.current_year_earnings, report.currency)}</td>
+                </tr>
+                <tr className="bg-slate-100/60 font-bold border-t border-slate-200">
+                  <td className="py-2.5 px-6 font-mono text-slate-500"></td>
+                  <td className="py-2.5 px-4 text-slate-900">Total Equity</td>
+                  <td className="py-2.5 px-6 font-mono text-slate-900 text-right">{fmtCur(report.total_equity, report.currency)}</td>
                 </tr>
 
-                {/* ── TOTAL EQUITY ── */}
-                <tr className="bg-slate-100/80 font-bold border-t-2 border-slate-300">
+                {/* ── TOTAL LIABILITIES & EQUITY ── */}
+                <tr className="bg-sky-50/60 font-black border-t-2 border-b-2 border-sky-300 text-sky-950 text-sm">
                   <td className="py-3 px-6 font-mono"></td>
-                  <td className="py-3 px-4 text-slate-900">TOTAL CAPITAL & RESERVES (EQUITY)</td>
-                  <td className="py-3 px-4 font-mono text-slate-900 text-right text-sm font-black">{fmtCur(report.total_equity)}</td>
-                  {hasComparison && <td className="py-3 px-4 font-mono text-right text-slate-700">£170,500.00</td>}
-                </tr>
-
-                {/* ── TOTAL LIABILITIES & EQUITY (EQUILIBRIUM CHECK) ── */}
-                <tr className="bg-slate-900 font-black text-white text-sm">
-                  <td className="py-3.5 px-6 font-mono"></td>
-                  <td className="py-3.5 px-4 flex items-center gap-2">
-                    TOTAL LIABILITIES & EQUITY
-                    <span className="text-[10px] bg-emerald-500 text-slate-950 font-black px-2 py-0.5 rounded">
-                      EQUILIBRIUM: {report.is_balanced ? "100% MATCH" : "DISCREPANCY"}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-right text-base text-emerald-400 font-black">
-                    {fmtCur(report.total_liabilities_and_equity)}
-                  </td>
-                  {hasComparison && <td className="py-3.5 px-4 font-mono text-right text-slate-400">£233,500.00</td>}
+                  <td className="py-3 px-4">TOTAL LIABILITIES & EQUITY</td>
+                  <td className="py-3 px-6 font-mono text-right text-base font-black">{fmtCur(report.total_liabilities_and_equity, report.currency)}</td>
                 </tr>
               </tbody>
             </table>

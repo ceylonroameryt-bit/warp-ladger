@@ -17,9 +17,8 @@ import {
   Lock,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface AccountOption {
   id: string;
@@ -36,23 +35,10 @@ interface JournalFormLine {
   credit: string;
 }
 
-const DEMO_ACCOUNTS: AccountOption[] = [
-  { id: "1", code: "1000", name: "Operating Bank Account", account_class: "ASSET", normal_balance: "DEBIT" },
-  { id: "2", code: "1100", name: "Accounts Receivable", account_class: "ASSET", normal_balance: "DEBIT" },
-  { id: "3", code: "1200", name: "Prepayments & Accruals", account_class: "ASSET", normal_balance: "DEBIT" },
-  { id: "4", code: "1500", name: "Office Equipment", account_class: "ASSET", normal_balance: "DEBIT" },
-  { id: "5", code: "2000", name: "Accounts Payable", account_class: "LIABILITY", normal_balance: "CREDIT" },
-  { id: "6", code: "2200", name: "VAT Output Tax", account_class: "LIABILITY", normal_balance: "CREDIT" },
-  { id: "8", code: "3000", name: "Share Capital", account_class: "EQUITY", normal_balance: "CREDIT" },
-  { id: "10", code: "4000", name: "Consulting Sales", account_class: "REVENUE", normal_balance: "CREDIT" },
-  { id: "12", code: "5000", name: "Cost of Goods Sold", account_class: "EXPENSE", normal_balance: "DEBIT" },
-  { id: "13", code: "6000", name: "Rent Expense", account_class: "EXPENSE", normal_balance: "DEBIT" },
-  { id: "14", code: "6050", name: "Depreciation Expense", account_class: "EXPENSE", normal_balance: "DEBIT" },
-];
-
 export default function NewJournalPage() {
   const router = useRouter();
-  const [accounts, setAccounts] = useState<AccountOption[]>(DEMO_ACCOUNTS);
+  const { activeOrganisationId } = useOrganisation();
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [entryDate, setEntryDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [narration, setNarration] = useState("");
   const [reference, setReference] = useState("");
@@ -68,24 +54,20 @@ export default function NewJournalPage() {
   // Fetch Chart of Accounts for selector
   useEffect(() => {
     async function loadAccounts() {
+      if (!activeOrganisationId) return;
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-        const headers: Record<string, string> = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounts?is_active=true`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.length > 0) {
-            setAccounts(data);
-          }
+        const data = await api.get<AccountOption[]>(
+          `/api/v1/organisations/${activeOrganisationId}/accounts?is_active=true`
+        );
+        if (data && Array.isArray(data)) {
+          setAccounts(data);
         }
       } catch (err) {
-        console.warn("Using demo account options", err);
+        setAccounts([]);
       }
     }
     loadAccounts();
-  }, []);
+  }, [activeOrganisationId]);
 
   const handleLineChange = (index: number, field: keyof JournalFormLine, value: string) => {
     const updated = [...lines];
@@ -151,12 +133,13 @@ export default function NewJournalPage() {
       return;
     }
 
+    if (!activeOrganisationId) {
+      setErrorMsg("No active organisation selected.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       const payload = {
         entry_date: entryDate,
         narration: narration.trim(),
@@ -170,17 +153,7 @@ export default function NewJournalPage() {
         })),
       };
 
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/journals`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to create journal entry.");
-      }
-
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/journals`, payload);
       router.push("/app/accounting/journals");
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to submit journal");

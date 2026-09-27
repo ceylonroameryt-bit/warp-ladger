@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import BillStatusBadge from "@/components/BillStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface BillItem {
   id: string;
@@ -64,35 +64,17 @@ function timeWaiting(dateStr?: string) {
 }
 
 export default function ApprovalsQueuePage() {
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
   const [bills, setBills] = useState<BillItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
 
   // Approval / Rejection modal state
   const [selectedBill, setSelectedBill] = useState<BillItem | null>(null);
   const [modalType, setModalType] = useState<"approve" | "reject" | null>(null);
   const [commentOrReason, setCommentOrReason] = useState("");
   const [actionInProgress, setActionInProgress] = useState(false);
-
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
 
   const fetchQueue = async () => {
     if (!orgId) return;

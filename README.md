@@ -2,136 +2,126 @@
 
 **Commercial Smart Accounting SaaS Platform**
 
-A production-ready, multi-tenant accounting platform built with FastAPI, Next.js, PostgreSQL, and Redis.
+A double-entry, multi-tenant accounting platform built with FastAPI, Next.js 15, PostgreSQL, and Redis.
+
+---
+
+## System Status & Roadmap
+
+### Implemented & Production-Verified
+- **Foundation & Security**:
+  - Argon2id password hashing with rotating, revocable refresh tokens
+  - HttpOnly, SameSite, Secure cookie-based authentication sessions
+  - Central CSRF protection for state-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`)
+  - Sliding-window rate limiting on sensitive routes (auth, uploads, AI processing)
+  - Strict tenant isolation across all database queries and route handlers
+  - Central file security pipeline: size limits, magic-byte MIME inspection, filename sanitization, SHA-256 checksums, and malware scanning abstraction
+  - Clean unbroken Alembic migration chain (`0001_foundation` through `0008_financial_reports`) tested against blank PostgreSQL
+- **Multi-Tenancy & Context**:
+  - Global `OrganisationProvider` and `useOrganisation()` hook managing tenant state
+  - Real tenant switcher with immediate context synchronization across all routes
+- **Contacts**:
+  - Customer, Supplier, and Dual-entity contacts with search, pagination, and archiving
+- **Sales Invoicing**:
+  - Line-item editor with exact Decimal arithmetic
+  - Approval flow assigning official sequential invoice numbers
+  - Direct General Ledger posting: Dr Accounts Receivable / Cr Revenue / Cr VAT Output
+  - Live server-calculated summary metrics (`/invoices/metrics`)
+- **Supplier Bills**:
+  - Multi-status bill lifecycle (Draft, Awaiting Approval, Approved, Overdue, Paid)
+  - Direct General Ledger posting: Dr Expense / Dr VAT Input / Cr Accounts Payable
+  - Duplicate invoice detection based on supplier, invoice number, date, and amount
+- **Smart Document Capture**:
+  - Secure upload pipeline with camera capture support (`Permissions-Policy: camera=(self)`)
+  - AI extraction and classification (human-in-the-loop review before bill conversion)
+  - Document duplicate warnings with audited manual override
+  - Zero mock documents in production environments (`[]` initial state with empty states)
+- **Payments & Settlements**:
+  - Atomic customer receipts and supplier bill payments with row-level locking
+  - Multi-invoice split allocations, partial settlements, and unallocated credit balances
+  - General Ledger payment postings (Dr Bank / Cr AR for receipts, Dr AP / Cr Bank for bills)
+  - Atomic payment voiding and journal counter-reversals
+- **Accounting & General Ledger**:
+  - Central idempotent `AccountingPostingService`
+  - Global financial lock dates and accounting period locking
+  - Immutable journals with audited reversal entries (never silently mutated)
+- **Financial Reports Hub**:
+  - Real ledger-derived Balance Sheet, Profit & Loss, Trial Balance
+  - Dynamic accounting periods based on organization financial year end
+  - Real aged receivables and aged payables subledgers
+
+### In Progress
+- **Banking Operations**:
+  - Bank Account Management
+  - CSV Bank Statement Import
+  - Bank Transaction Reconciliation matching rules
+
+### Planned (Future Phases)
+- Open Banking automated bank feeds (regulated provider integration)
+- HMRC Making Tax Digital (MTD) VAT returns submission (subject to formal accountant validation)
+- Multi-currency revaluation and foreign exchange accounting
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python 3.12, SQLAlchemy 2 (asyncio), Pydantic v2 |
+| Database | PostgreSQL 16 |
+| Cache / Queue | Redis 7, ARQ |
+| File Storage | MinIO (local dev), AWS S3 / Cloudflare R2 (production) |
+| Auth | JWT (HttpOnly cookies), Argon2id |
+| Migrations | Alembic |
+| CI/CD | GitHub Actions, Render, Vercel |
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (v24+)
-- [Make](https://www.gnu.org/software/make/) (optional but recommended)
+- Python 3.12+
+- Node.js 20+
+- PostgreSQL 16
+- Redis 7
 
-### 1. Clone and configure
+### 1. Backend Setup
 ```bash
-git clone <repo-url>
-cd Ladger
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -e ".[dev]"
 cp .env.example .env
-# Edit .env and set SECRET_KEY and passwords
+alembic upgrade head
+python -m app.core.bootstrap_admin --email admin@example.com --password YourStrongPassword123!
+uvicorn app.main:app --port 8001 --reload
 ```
 
-### 2. Start everything
+### 2. Frontend Setup
 ```bash
-make dev
-# OR without Make:
-docker-compose up --build -d
+cd apps/web
+npm install
+npm run dev
 ```
 
-### 3. Run migrations and seed
-```bash
-make migrate
-make seed
-```
-
-### 4. Open services
-
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| API | http://localhost:8000 |
-| API Docs (Swagger) | http://localhost:8000/api/docs |
-| API Docs (ReDoc) | http://localhost:8000/api/redoc |
-| MailHog | http://localhost:8025 |
-| MinIO Console | http://localhost:9001 |
+Visit `http://localhost:3001` to access Warp Ladger.
 
 ---
 
-## Architecture
+## Running Verification Tests
 
-```
-Warp Ladger Monorepo
-├── apps/web/              Next.js 15 frontend
-├── backend/               FastAPI Python backend
-│   ├── app/
-│   │   ├── auth/          Authentication & sessions
-│   │   ├── users/         User profile management
-│   │   ├── organisations/ Multi-tenant organisation management
-│   │   ├── memberships/   Org ↔ User relationships
-│   │   ├── roles/         Role management
-│   │   ├── permissions/   Fine-grained permissions
-│   │   ├── invitations/   Email-based org invitations
-│   │   ├── audit/         Audit log
-│   │   ├── files/         File storage abstraction
-│   │   ├── settings/      Org & user settings
-│   │   ├── security/      Rate limiting, CSRF, headers
-│   │   ├── database/      SQLAlchemy async engine
-│   │   └── core/          Config, dependencies, logging
-│   ├── migrations/        Alembic migrations
-│   └── tests/             Pytest test suite
-├── packages/
-│   └── shared-types/      Shared TypeScript types
-├── infrastructure/
-│   ├── docker/            Dockerfiles
-│   └── scripts/           Seed scripts
-└── docs/                  Architecture & security docs
-```
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui |
-| Backend | FastAPI, Python 3.12, SQLAlchemy 2, Pydantic v2 |
-| Database | PostgreSQL 16 |
-| Cache / Sessions | Redis 7 |
-| File Storage | MinIO (dev), S3 / Cloudflare R2 (prod) |
-| Auth | JWT (HttpOnly cookies), Argon2id |
-| Migrations | Alembic |
-| Local Email | MailHog |
-| Container | Docker & Docker Compose |
-
-## Security
-
-- Passwords hashed with **Argon2id**
-- JWT access tokens (15 min) + rotating refresh tokens (7 days)
-- All tokens stored in **HttpOnly, Secure, SameSite=Strict** cookies
-- Refresh tokens hashed in database (revocable)
-- **Multi-tenant isolation**: every resource carries `organisation_id`; every request validates membership + role + permission
-- Rate limiting (Redis sliding window) on auth and API endpoints
-- CSRF protection for cookie-authenticated endpoints
-- Security headers (HSTS, X-Frame-Options, CSP)
-- Structured audit log for all mutations
-
-## Development Commands
-
+### Backend Golden Accounting & Security Tests
 ```bash
-make help           # Show all commands
-make dev            # Start stack
-make migrate        # Run migrations
-make seed           # Seed roles, permissions, super-admin
-make test           # Run test suite
-make lint           # Lint all code
-make fmt            # Format code
-make shell-backend  # Shell into backend
-make shell-db       # PostgreSQL shell
-make clean          # Remove all containers + volumes
+pytest -v backend/tests/test_golden_accounting_posting.py backend/tests/test_security_csrf_and_ratelimit.py backend/tests/test_tenant_isolation_bills.py backend/tests/test_phase6_payments.py
 ```
 
-## Environment Variables
-
-See [`.env.example`](.env.example) for all configuration options.
-
----
-
-## Phase Roadmap
-
-- **Phase 1** ✅ Foundation (auth, multi-tenancy, RBAC, audit, file storage)
-- **Phase 2** — Invoicing (sales invoices, PDF generation)
-- **Phase 3** — Expenses (supplier bills, purchase orders)
-- **Phase 4** — Banking (bank feeds, reconciliation)
-- **Phase 5** — Reporting (P&L, balance sheet, cash flow)
-- **Phase 6** — Tax (VAT returns, MTD)
-- **Phase 7** — Payroll
+### Frontend Typecheck & Build
+```bash
+cd apps/web
+npm run typecheck
+npm run build
+```
 
 ---
 

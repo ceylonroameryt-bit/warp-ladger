@@ -65,10 +65,6 @@ class AuthService:
         if existing.scalar_one_or_none():
             raise ConflictError("An account with this email address already exists.")
 
-        # Determine if first user → superadmin
-        user_count_result = await self.db.execute(select(User).limit(1))
-        is_first_user = user_count_result.scalar_one_or_none() is None
-
         verify_token = generate_token(32)
         verify_token_hash = hash_token(verify_token)
 
@@ -76,7 +72,7 @@ class AuthService:
             email=email,
             hashed_password=hash_password(password),
             full_name=full_name,
-            is_superadmin=is_first_user,
+            is_superadmin=False,
             email_verification_token_hash=verify_token_hash,
             email_verification_sent_at=datetime.now(UTC),
         )

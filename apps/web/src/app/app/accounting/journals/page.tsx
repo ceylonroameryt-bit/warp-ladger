@@ -21,9 +21,8 @@ import {
   ChevronUp,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface JournalLine {
   id: string;
@@ -69,59 +68,6 @@ const SOURCE_BADGES: Record<string, string> = {
   CLOSING_ENTRY: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
-const DEMO_JOURNALS: JournalEntry[] = [
-  {
-    id: "j-001",
-    entry_number: "JRN-000001",
-    entry_date: "2026-03-01",
-    narration: "Monthly office depreciation allocation (fixtures and fittings)",
-    reference: "DEP-2026-03",
-    source_type: "MANUAL",
-    status: "POSTED",
-    total_debit: 450.0,
-    total_credit: 450.0,
-    created_at: "2026-03-01T10:00:00Z",
-    posted_at: "2026-03-01T10:05:00Z",
-    lines: [
-      { id: "l1", account_id: "a1", account: { code: "6050", name: "Depreciation Expense", account_class: "EXPENSE" }, debit: 450.0, credit: 0 },
-      { id: "l2", account_id: "a2", account: { code: "1550", name: "Accumulated Depreciation", account_class: "ASSET" }, debit: 0, credit: 450.0 },
-    ],
-  },
-  {
-    id: "j-002",
-    entry_number: "JRN-000002",
-    entry_date: "2026-03-05",
-    narration: "Prepaid insurance adjustment for Q1 2026",
-    reference: "INS-ADJ",
-    source_type: "MANUAL",
-    status: "POSTED",
-    total_debit: 1200.0,
-    total_credit: 1200.0,
-    created_at: "2026-03-05T09:15:00Z",
-    posted_at: "2026-03-05T09:20:00Z",
-    lines: [
-      { id: "l3", account_id: "a3", account: { code: "6030", name: "Insurance Expense", account_class: "EXPENSE" }, debit: 1200.0, credit: 0 },
-      { id: "l4", account_id: "a4", account: { code: "1200", name: "Prepayments & Accruals", account_class: "ASSET" }, debit: 0, credit: 1200.0 },
-    ],
-  },
-  {
-    id: "j-003",
-    entry_number: "JRN-000003",
-    entry_date: "2026-03-10",
-    narration: "Quarterly VAT reconciliation provision",
-    reference: "VAT-Q1-PROV",
-    source_type: "MANUAL",
-    status: "DRAFT",
-    total_debit: 3500.0,
-    total_credit: 3500.0,
-    created_at: "2026-03-10T14:30:00Z",
-    lines: [
-      { id: "l5", account_id: "a5", account: { code: "2200", name: "VAT Output Tax", account_class: "LIABILITY" }, debit: 3500.0, credit: 0 },
-      { id: "l6", account_id: "a6", account: { code: "2210", name: "HMRC VAT Control Account", account_class: "LIABILITY" }, debit: 0, credit: 3500.0 },
-    ],
-  },
-];
-
 function fmtCur(amount: number | string | undefined) {
   if (amount === undefined || amount === null) return "£0.00";
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -129,8 +75,9 @@ function fmtCur(amount: number | string | undefined) {
 }
 
 function JournalsContent() {
-  const [journals, setJournals] = useState<JournalEntry[]>(DEMO_JOURNALS);
-  const [loading, setLoading] = useState(false);
+  const { activeOrganisationId } = useOrganisation();
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeStatus, setActiveStatus] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -144,50 +91,34 @@ function JournalsContent() {
   const [actionError, setActionError] = useState("");
 
   const fetchJournals = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      let url = `${API_BASE}/api/v1/organisations/${ORG_ID}/journals?limit=100`;
+      let url = `/api/v1/organisations/${activeOrganisationId}/journals?limit=100`;
       if (activeStatus !== "ALL") url += `&status=${activeStatus}`;
 
-      const res = await fetch(url, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.items && data.items.length > 0) {
-          setJournals(data.items);
-        }
+      const data = await api.get<any>(url);
+      if (data && data.items) {
+        setJournals(data.items);
+      } else {
+        setJournals([]);
       }
     } catch (err) {
-      console.warn("Using demo journals", err);
+      setJournals([]);
     } finally {
       setLoading(false);
     }
-  }, [activeStatus]);
+  }, [activeOrganisationId, activeStatus]);
 
   useEffect(() => {
     fetchJournals();
   }, [fetchJournals]);
 
   const handlePost = async (journalId: string) => {
+    if (!activeOrganisationId) return;
     setActionLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/journals/${journalId}/post`, {
-        method: "POST",
-        headers,
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to post journal");
-      }
-
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/journals/${journalId}/post`, {});
       await fetchJournals();
     } catch (err: any) {
       alert(err.message || "Failed to post journal");
@@ -198,28 +129,15 @@ function JournalsContent() {
 
   const handleReverse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetJournal) return;
+    if (!targetJournal || !activeOrganisationId) return;
     setActionLoading(true);
     setActionError("");
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/journals/${targetJournal.id}/reverse`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          reversal_date: reversalDate,
-          reversal_reason: reversalReason,
-        }),
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/journals/${targetJournal.id}/reverse`, {
+        reversal_date: reversalDate,
+        reversal_reason: reversalReason,
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to reverse journal");
-      }
 
       setReversalModalOpen(false);
       setTargetJournal(null);

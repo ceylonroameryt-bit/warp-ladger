@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import (
+    CSRFProtectionMiddleware,
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
@@ -51,6 +52,7 @@ log = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    settings.validate_production_environment()
     log.info("warp_ladger_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
     await init_db()
     yield
@@ -72,6 +74,7 @@ def create_app() -> FastAPI:
 
     # ── Middleware (order matters — outermost first) ──────────
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(CSRFProtectionMiddleware)
     app.add_middleware(TrailingSlashMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)

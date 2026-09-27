@@ -3,7 +3,7 @@ services:
     name: warpladger-api
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -e .
     startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     plan: free
     autoDeploy: true
@@ -11,7 +11,7 @@ services:
       - key: APP_ENV
         value: production
       - key: PYTHON_VERSION
-        value: 3.11.9
+        value: 3.12.3
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -19,6 +19,6 @@ services:
       - key: APP_URL
         sync: false
       - key: CORS_ORIGINS
-        value: '["*"]'
+        value: '["https://warp-6dogc5mng-nasa-443.vercel.app","http://localhost:3000","http://localhost:3001"]'
       - key: ALLOWED_HOSTS
-        value: '["*"]'
+        value: '["warpladger-api.onrender.com","localhost","127.0.0.1"]'

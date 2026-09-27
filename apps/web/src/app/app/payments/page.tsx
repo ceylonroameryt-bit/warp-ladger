@@ -25,9 +25,10 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PaymentStatusBadge, PaymentTypeBadge } from "@/components/PaymentStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
 
 interface Allocation {
   id: string;
@@ -102,15 +103,16 @@ function PaymentsHubContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const { activeOrganisationId } = useOrganisation();
   const [activeTab, setActiveTab] = useState<"all" | "incoming" | "outgoing" | "banks">("all");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [metrics, setMetrics] = useState<PaymentMetrics>({
-    total_incoming: 42500.0,
-    total_outgoing: 18200.0,
-    unallocated_incoming: 850.0,
-    unallocated_outgoing: 0.0,
-    payment_count: 24,
+    total_incoming: 0,
+    total_outgoing: 0,
+    unallocated_incoming: 0,
+    unallocated_outgoing: 0,
+    payment_count: 0,
   });
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -137,147 +139,65 @@ function PaymentsHubContent() {
   });
 
   const fetchData = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       // 1. Fetch payments
-      let url = `${API_BASE}/api/v1/organisations/${ORG_ID}/payments?limit=100`;
+      let url = `${API_BASE}/api/v1/organisations/${activeOrganisationId}/payments?limit=100`;
       if (activeTab === "incoming") url += `&payment_type=INCOMING`;
       if (activeTab === "outgoing") url += `&payment_type=OUTGOING`;
       if (statusFilter) url += `&status=${statusFilter}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
 
-      const resPay = await fetch(url, { headers });
+      const resPay = await fetch(url, { credentials: "include" });
       if (resPay.ok) {
         const data = await resPay.json();
         setPayments(data.items || []);
       } else {
-        // Fallback demo dataset for visual demonstration
-        setPayments([
-          {
-            id: "p-01",
-            payment_number: "PAY-000001",
-            payment_type: "INCOMING",
-            contact_name: "Acme Corporation Ltd",
-            bank_account_name: "Main Business Checking",
-            payment_date: new Date().toISOString(),
-            amount: 600.0,
-            allocated_amount: 600.0,
-            unallocated_amount: 0.0,
-            currency: "GBP",
-            payment_method: "BANK_TRANSFER",
-            reference: "INV-101-SETTLED",
-            status: "POSTED",
-            allocations: [
-              {
-                id: "al-1",
-                target_type: "INVOICE",
-                invoice_number: "INV-000101",
-                amount: 600.0,
-                created_at: new Date().toISOString(),
-              },
-            ],
-          },
-          {
-            id: "p-02",
-            payment_number: "PAY-000002",
-            payment_type: "OUTGOING",
-            contact_name: "Consolidated Supplies PLC",
-            bank_account_name: "Main Business Checking",
-            payment_date: new Date(Date.now() - 86400000 * 2).toISOString(),
-            amount: 750.0,
-            allocated_amount: 750.0,
-            unallocated_amount: 0.0,
-            currency: "GBP",
-            payment_method: "BANK_TRANSFER",
-            reference: "BILL-PAY-001",
-            status: "POSTED",
-            allocations: [
-              {
-                id: "al-2",
-                target_type: "BILL",
-                bill_number: "BILL-000201",
-                amount: 750.0,
-                created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-              },
-            ],
-          },
-          {
-            id: "p-03",
-            payment_number: "PAY-000003",
-            payment_type: "INCOMING",
-            contact_name: "Global Tech Services",
-            bank_account_name: "Main Business Checking",
-            payment_date: new Date(Date.now() - 86400000 * 4).toISOString(),
-            amount: 1500.0,
-            allocated_amount: 1000.0,
-            unallocated_amount: 500.0,
-            currency: "GBP",
-            payment_method: "BANK_TRANSFER",
-            reference: "ADVANCE-DEPOSIT",
-            status: "POSTED",
-            allocations: [
-              {
-                id: "al-3",
-                target_type: "INVOICE",
-                invoice_number: "INV-000105",
-                amount: 1000.0,
-                created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
-              },
-            ],
-          },
-        ]);
+        setPayments([]);
       }
 
       // 2. Fetch Bank Accounts
-      const resBank = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/bank-accounts`, { headers });
+      const resBank = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/bank-accounts`, {
+        credentials: "include",
+      });
       if (resBank.ok) {
         const bData = await resBank.json();
         setBankAccounts(bData || []);
       } else {
-        setBankAccounts([
-          {
-            id: "bank-1",
-            account_name: "Main Business Checking",
-            account_type: "CHECKING",
-            currency: "GBP",
-            account_number: "•••• 5678",
-            sort_code: "20-00-00",
-            current_balance: 24850.0,
-            opening_balance: 10000.0,
-            is_default: true,
-            active: true,
-          },
-          {
-            id: "bank-2",
-            account_name: "Corporate Reserve Savings",
-            account_type: "SAVINGS",
-            currency: "GBP",
-            account_number: "•••• 8912",
-            sort_code: "20-00-05",
-            current_balance: 75000.0,
-            opening_balance: 50000.0,
-            is_default: false,
-            active: true,
-          },
-        ]);
+        setBankAccounts([]);
       }
 
       // 3. Fetch Metrics
-      const resMet = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/payments/metrics`, { headers });
+      const resMet = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/payments/metrics`, {
+        credentials: "include",
+      });
       if (resMet.ok) {
         const mData = await resMet.json();
         setMetrics(mData);
+      } else {
+        setMetrics({
+          total_incoming: 0,
+          total_outgoing: 0,
+          unallocated_incoming: 0,
+          unallocated_outgoing: 0,
+          payment_count: 0,
+        });
       }
     } catch (err) {
-      console.error("Failed to load payments data:", err);
+      setPayments([]);
+      setBankAccounts([]);
+      setMetrics({
+        total_incoming: 0,
+        total_outgoing: 0,
+        unallocated_incoming: 0,
+        unallocated_outgoing: 0,
+        payment_count: 0,
+      });
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, search]);
+  }, [activeOrganisationId, activeTab, statusFilter, search]);
 
   useEffect(() => {
     fetchData();
@@ -289,25 +209,18 @@ function PaymentsHubContent() {
       setVoidError("A clear audit void reason is mandatory.");
       return;
     }
+    if (!activeOrganisationId) {
+      setVoidError("No active organisation selected.");
+      return;
+    }
 
     setVoiding(true);
     setVoidError("");
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/payments/${selectedPayment.id}/void`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ reason: voidReason.trim() }),
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/payments/${selectedPayment.id}/void`, {
+        reason: voidReason.trim(),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to void payment");
-      }
 
       setVoidModalOpen(false);
       setSelectedPayment(null);
@@ -322,30 +235,20 @@ function PaymentsHubContent() {
 
   const handleCreateBankAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeOrganisationId) return;
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/bank-accounts`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(bankFormData),
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/bank-accounts`, bankFormData);
+      setAddBankModalOpen(false);
+      setBankFormData({
+        account_name: "",
+        account_type: "CHECKING",
+        account_number: "",
+        sort_code: "",
+        currency: "GBP",
+        opening_balance: 0,
+        is_default: false,
       });
-
-      if (res.ok) {
-        setAddBankModalOpen(false);
-        setBankFormData({
-          account_name: "",
-          account_type: "CHECKING",
-          account_number: "",
-          sort_code: "",
-          currency: "GBP",
-          opening_balance: 0,
-          is_default: false,
-        });
-        fetchData();
-      }
+      fetchData();
     } catch (err) {
       console.error("Error creating bank account:", err);
     }

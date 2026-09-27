@@ -44,6 +44,8 @@ from app.payments.schemas import (
     PaymentResponse,
 )
 
+from app.ledger.posting_service import AccountingPostingService
+
 log = structlog.get_logger(__name__)
 
 
@@ -381,6 +383,9 @@ class PaymentService:
                 "unallocated": str(payment.unallocated_amount),
             },
         )
+        # 7. Post to General Ledger
+        await AccountingPostingService.post_payment_to_ledger(db, payment, user_id)
+
         await db.flush()
 
         return PaymentDetailResponse(
@@ -606,6 +611,9 @@ class PaymentService:
             user_id=user_id,
             diff={"reason": reason, "reversed_amount": str(payment.amount)},
         )
+        # Reverse General Ledger journal
+        await AccountingPostingService.reverse_payment_journal(db, payment, user_id, reason)
+
         await db.flush()
 
         return await PaymentService.get_payment(db, org_id, payment_id)

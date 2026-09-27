@@ -97,6 +97,26 @@ class DocumentSecurityService:
                     f"Image document exceeds maximum allowed size of {settings.DOCUMENT_MAX_IMAGE_SIZE_MB} MB."
                 )
 
+        # Malware Scan check
+        from app.files.malware import get_malware_scanner
+        import asyncio
+        scanner = get_malware_scanner()
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    scan_res = pool.submit(asyncio.run, scanner.scan(data, filename)).result()
+            else:
+                scan_res = loop.run_until_complete(scanner.scan(data, filename))
+        except RuntimeError:
+            scan_res = asyncio.run(scanner.scan(data, filename))
+
+        if not scan_res.is_clean:
+            raise ValidationFailedError(
+                f"Document upload rejected: security scanner detected threat '{scan_res.virus_name}'."
+            )
+
         # Calculate SHA-256
         sha256 = hashlib.sha256(data).hexdigest()
 

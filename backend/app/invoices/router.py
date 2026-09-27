@@ -101,6 +101,16 @@ async def create_invoice(
     return resp
 
 
+@router.get("/metrics", dependencies=[Depends(require_permission("invoices", "read"))])
+async def get_invoice_metrics(
+    org_id: uuid.UUID,
+    db: DBSession,
+    membership: OrgMembership,
+):
+    """Return server-calculated invoice metrics (draft, awaiting payment, overdue, paid)."""
+    return await InvoiceService.get_metrics(db, org_id)
+
+
 @router.get("/{invoice_id}", response_model=InvoiceDetailResponse, dependencies=[Depends(require_permission("invoices", "read"))])
 async def get_invoice(
     org_id: uuid.UUID,

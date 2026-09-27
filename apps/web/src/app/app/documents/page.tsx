@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -30,9 +30,9 @@ import {
   Layers,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface DocumentListItem {
   id: string;
@@ -75,126 +75,6 @@ interface DocumentListItem {
   line_item_count?: number | null;
 }
 
-const DEMO_DOCUMENTS: DocumentListItem[] = [
-  {
-    id: "doc-sample-1",
-    original_filename: "AWS_Cloud_Invoice_AUG2026.pdf",
-    file_format: "application/pdf",
-    file_size_bytes: 348210,
-    status: "READY_FOR_BILL",
-    created_bill_id: null,
-    duplicate_status: "CLEAN",
-    has_bank_details_warning: true,
-    bank_details_warning_dismissed: false,
-    uploaded_at: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-    processed_at: new Date(Date.now() - 1000 * 60 * 24).toISOString(),
-    document_type: "SUPPLIER_INVOICE",
-    overall_confidence: 0.98,
-    extracted_supplier_name: "Amazon Web Services EMEA SARL",
-    matched_contact_id: "c-aws",
-    matched_contact_name: "Amazon Web Services UK",
-    supplier_match_confidence: 0.99,
-    supplier_match_type: "EXACT_VAT",
-    extracted_invoice_number: "INV-EU-8849201",
-    extracted_invoice_date: "2026-08-31",
-    extracted_due_date: "2026-09-30",
-    extracted_subtotal: "1250.00",
-    extracted_tax_amount: "250.00",
-    extracted_total_amount: "1500.00",
-    currency: "GBP",
-    math_verification_status: "VALID",
-    line_item_count: 3,
-  },
-  {
-    id: "doc-sample-2",
-    original_filename: "OfficeSupplies_Receipt_Sep.jpg",
-    file_format: "image/jpeg",
-    file_size_bytes: 1824000,
-    status: "NEEDS_REVIEW",
-    created_bill_id: null,
-    duplicate_status: "CLEAN",
-    has_bank_details_warning: false,
-    bank_details_warning_dismissed: false,
-    uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    processed_at: new Date(Date.now() - 1000 * 60 * 59).toISOString(),
-    document_type: "RECEIPT",
-    overall_confidence: 0.84,
-    extracted_supplier_name: "Staples Business Superstore",
-    matched_contact_id: "c-staples",
-    matched_contact_name: "Staples UK Ltd",
-    supplier_match_confidence: 0.92,
-    supplier_match_type: "NAME_SIMILARITY",
-    extracted_invoice_number: "STP-99201",
-    extracted_invoice_date: "2026-09-18",
-    extracted_due_date: "2026-09-18",
-    extracted_subtotal: "82.50",
-    extracted_tax_amount: "16.50",
-    extracted_total_amount: "99.00",
-    currency: "GBP",
-    math_verification_status: "VALID",
-    line_item_count: 2,
-  },
-  {
-    id: "doc-sample-3",
-    original_filename: "BT_Internet_Fibre_Bill_SEP.pdf",
-    file_format: "application/pdf",
-    file_size_bytes: 520400,
-    status: "NEEDS_REVIEW",
-    created_bill_id: null,
-    duplicate_status: "POSSIBLE_DUPLICATE",
-    duplicate_of_document_id: "doc-sample-old",
-    has_bank_details_warning: true,
-    bank_details_warning_dismissed: false,
-    uploaded_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
-    processed_at: new Date(Date.now() - 1000 * 60 * 179).toISOString(),
-    document_type: "SUPPLIER_INVOICE",
-    overall_confidence: 0.74,
-    extracted_supplier_name: "British Telecom plc",
-    matched_contact_id: "c-bt",
-    matched_contact_name: "BT Business Direct",
-    supplier_match_confidence: 0.88,
-    supplier_match_type: "NAME_SIMILARITY",
-    extracted_invoice_number: "Q044-88912",
-    extracted_invoice_date: "2026-09-01",
-    extracted_due_date: "2026-09-28",
-    extracted_subtotal: "190.00",
-    extracted_tax_amount: "38.00",
-    extracted_total_amount: "228.00",
-    currency: "GBP",
-    math_verification_status: "VALID",
-    line_item_count: 1,
-  },
-  {
-    id: "doc-sample-4",
-    original_filename: "Dell_Latitude_Laptops_PO104.pdf",
-    file_format: "application/pdf",
-    file_size_bytes: 840100,
-    status: "CONVERTED_TO_BILL",
-    created_bill_id: "bill-dell-001",
-    duplicate_status: "CLEAN",
-    has_bank_details_warning: false,
-    bank_details_warning_dismissed: true,
-    uploaded_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    processed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 + 12000).toISOString(),
-    document_type: "SUPPLIER_INVOICE",
-    overall_confidence: 0.99,
-    extracted_supplier_name: "Dell Technologies UK Ltd",
-    matched_contact_id: "c-dell",
-    matched_contact_name: "Dell Technologies UK Ltd",
-    supplier_match_confidence: 1.0,
-    supplier_match_type: "EXACT_VAT",
-    extracted_invoice_number: "DELL-UK-904128",
-    extracted_invoice_date: "2026-09-10",
-    extracted_due_date: "2026-10-10",
-    extracted_subtotal: "4200.00",
-    extracted_tax_amount: "840.00",
-    extracted_total_amount: "5040.00",
-    currency: "GBP",
-    math_verification_status: "VALID",
-    line_item_count: 4,
-  },
-];
-
 function fmtMoney(amount?: string | number | null, currency = "GBP"): string {
   if (amount === undefined || amount === null || amount === "") return "—";
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -234,7 +114,8 @@ function DocumentInboxContent() {
   const filterParam = searchParams.get("filter") || "all";
   const uploadParam = searchParams.get("upload") === "true";
 
-  const [documents, setDocuments] = useState<DocumentListItem[]>(DEMO_DOCUMENTS);
+  const { activeOrganisationId } = useOrganisation();
+  const [documents, setDocuments] = useState<DocumentListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(filterParam);
   const [searchQuery, setSearchQuery] = useState("");
@@ -248,29 +129,9 @@ function DocumentInboxContent() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocType, setSelectedDocType] = useState<string>("");
   const [autoProcess, setAutoProcess] = useState(true);
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
 
   // Sync tab with URL
   useEffect(() => {
@@ -286,16 +147,16 @@ function DocumentInboxContent() {
   }, [uploadParam]);
 
   // Fetch real documents from API
-  const fetchDocuments = async () => {
-    if (!orgId) return;
+  const fetchDocuments = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${orgId}/documents?page_size=50`, {
+      const res = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/documents?page_size=50`, {
         credentials: "include",
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.items && data.items.length > 0) {
+        if (data && data.items) {
           const mapped: DocumentListItem[] = data.items.map((item: any) => ({
             id: item.id,
             original_filename: item.original_filename,
@@ -328,20 +189,22 @@ function DocumentInboxContent() {
             line_item_count: item.line_item_count,
           }));
           setDocuments(mapped);
+        } else {
+          setDocuments([]);
         }
+      } else {
+        setDocuments([]);
       }
     } catch {
-      // Keep demo documents on error
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeOrganisationId]);
 
   useEffect(() => {
-    if (orgId) {
-      fetchDocuments();
-    }
-  }, [orgId]);
+    fetchDocuments();
+  }, [fetchDocuments]);
 
   // Stats calculation
   const stats = useMemo(() => {
@@ -445,7 +308,7 @@ function DocumentInboxContent() {
 
     try {
       setUploadProgress(50);
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${orgId}/documents/upload`, {
+      const res = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/documents/upload`, {
         method: "POST",
         credentials: "include",
         body: formData,

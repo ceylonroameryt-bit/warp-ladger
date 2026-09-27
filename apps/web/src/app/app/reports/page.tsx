@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -11,17 +11,27 @@ import {
   Calendar,
   ArrowRight,
   ShieldCheck,
-  Download,
-  Printer,
-  Sparkles,
   BookOpen,
-  PieChart,
-  DollarSign,
-  AlertCircle,
-  Clock,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
+import { generateDynamicPeriods } from "@/lib/periods";
+
+interface ExecutiveSummary {
+  as_of_date: string;
+  ytd_net_profit: string | number;
+  ytd_turnover: string | number;
+  gross_profit_margin_pct: string | number;
+  total_assets: string | number;
+  net_assets: string | number;
+  is_balance_sheet_balanced: boolean;
+  debtors_outstanding: string | number;
+  creditors_outstanding: string | number;
+  currency: string;
+}
 
 interface ReportCardProps {
   title: string;
@@ -49,10 +59,10 @@ function ReportCard({
   keyMetricValue,
 }: ReportCardProps) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 hover:border-[#00A3C4] shadow-sm hover:shadow-md transition-all duration-200 p-6 flex flex-col justify-between group">
+    <div className="bg-white rounded-xl border border-slate-200 hover:border-[#0073B7] shadow-sm hover:shadow-md transition-all duration-200 p-6 flex flex-col justify-between group">
       <div>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center group-hover:bg-[#00A3C4]/10 group-hover:border-[#00A3C4]/30 transition-colors">
+          <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center group-hover:bg-[#0073B7]/10 group-hover:border-[#0073B7]/30 transition-colors">
             {icon}
           </div>
           <div className="flex items-center gap-2">
@@ -85,7 +95,7 @@ function ReportCard({
 
       <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
         <span className="text-[11px] font-medium text-slate-400">
-          Standard: <span className="text-slate-600">{standard}</span>
+          Classification: <span className="text-slate-600">{standard}</span>
         </span>
         <Link
           href={href}
@@ -99,8 +109,39 @@ function ReportCard({
   );
 }
 
+function fmtCur(amount: number | string | undefined | null, currency = "GBP") {
+  if (amount === undefined || amount === null) return "£0.00";
+  const num = typeof amount === "string" ? parseFloat(amount) : amount;
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(num);
+}
+
 export default function ReportsHubPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState("2026-Q1");
+  const { activeOrganisation, activeOrganisationId } = useOrganisation();
+  const periods = generateDynamicPeriods(activeOrganisation?.financial_year_end_month || 3);
+  const [selectedPeriod, setSelectedPeriod] = useState(periods[0]?.id || "this_quarter");
+  const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSummary = useCallback(async () => {
+    if (!activeOrganisationId) return;
+    setLoading(true);
+    try {
+      const data = await api.get<ExecutiveSummary>(
+        `/api/v1/organisations/${activeOrganisationId}/reports/executive-summary`
+      );
+      setSummary(data);
+    } catch {
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeOrganisationId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  const currency = summary?.currency || "GBP";
 
   return (
     <DashboardLayout>
@@ -113,13 +154,13 @@ export default function ReportsHubPage() {
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Ledger Equilibrium Active
               </span>
-              <span className="text-xs text-slate-400">UK GAAP / FRS 102 Compliant</span>
+              <span className="text-xs text-slate-400">Double-entry financial reporting</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Financial Statements & Reports
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Real-time management accounting engine powered by double-entry ledger precision.
+              Management accounting reports powered by double-entry general ledger precision.
               Generate comparative P&L, balance sheets with automated retained earnings, and aged debtor/creditor schedules.
             </p>
           </div>
@@ -133,9 +174,11 @@ export default function ReportsHubPage() {
                 onChange={(e) => setSelectedPeriod(e.target.value)}
                 className="bg-transparent text-white text-xs font-semibold focus:outline-none pr-3 cursor-pointer"
               >
-                <option value="2026-Q1" className="bg-slate-900 text-white">Current Quarter (Q1 2026)</option>
-                <option value="2026-YTD" className="bg-slate-900 text-white">Financial Year 2025/26 YTD</option>
-                <option value="2025-FY" className="bg-slate-900 text-white">Financial Year 2024/25</option>
+                {periods.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -159,12 +202,13 @@ export default function ReportsHubPage() {
               </div>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black font-mono text-slate-900">£105,420.00</span>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                +14.8%
+              <span className="text-2xl font-black font-mono text-slate-900">
+                {loading ? "..." : fmtCur(summary?.ytd_net_profit, currency)}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">Gross margin 68.4% on £154k turnover</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Turnover: {loading ? "..." : fmtCur(summary?.ytd_turnover, currency)}
+            </p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -175,12 +219,16 @@ export default function ReportsHubPage() {
               </div>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black font-mono text-slate-900">£284,950.50</span>
-              <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded">
-                Balanced
+              <span className="text-2xl font-black font-mono text-slate-900">
+                {loading ? "..." : fmtCur(summary?.net_assets, currency)}
+              </span>
+              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${summary?.is_balance_sheet_balanced ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
+                {summary?.is_balance_sheet_balanced ? "Balanced" : "Review"}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">Assets £342k · Liabilities £57k</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Gross Assets: {loading ? "..." : fmtCur(summary?.total_assets, currency)}
+            </p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -191,12 +239,11 @@ export default function ReportsHubPage() {
               </div>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black font-mono text-slate-900">£24,650.00</span>
-              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-                8 Invoices
+              <span className="text-2xl font-black font-mono text-slate-900">
+                {loading ? "..." : fmtCur(summary?.debtors_outstanding, currency)}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">92% within current 30-day terms</p>
+            <p className="text-[11px] text-slate-500 mt-1">Total customer receivables</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -207,12 +254,11 @@ export default function ReportsHubPage() {
               </div>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black font-mono text-slate-900">£18,220.00</span>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                0 Overdue
+              <span className="text-2xl font-black font-mono text-slate-900">
+                {loading ? "..." : fmtCur(summary?.creditors_outstanding, currency)}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">All supplier liabilities current</p>
+            <p className="text-[11px] text-slate-500 mt-1">Total supplier payables</p>
           </div>
         </div>
 
@@ -232,39 +278,39 @@ export default function ReportsHubPage() {
               title="Profit and Loss (Income Statement)"
               description="Summarises trading revenue, cost of sales, gross profit, and operating overheads over any fiscal timeframe with comparative analysis."
               href="/app/reports/profit-and-loss"
-              badge="Most Viewed"
+              badge="Statement"
               badgeColor="bg-emerald-50 text-emerald-700 border-emerald-200"
               icon={<TrendingUp className="h-6 w-6 text-emerald-600" />}
-              frequency="Monthly / Quarterly"
-              standard="FRS 102 Section 5"
-              keyMetricLabel="Net Operating Profit"
-              keyMetricValue="£105,420.00"
+              frequency="Periodic"
+              standard="Trading Statement"
+              keyMetricLabel="Net Profit YTD"
+              keyMetricValue={loading ? "..." : fmtCur(summary?.ytd_net_profit, currency)}
             />
 
             <ReportCard
               title="Balance Sheet (Financial Position)"
               description="A point-in-time snapshot of entity assets, liabilities, and equity with automated mathematical equilibrium verification."
               href="/app/reports/balance-sheet"
-              badge="Equilibrium Guaranteed"
+              badge="Statement"
               badgeColor="bg-sky-50 text-sky-700 border-sky-200"
               icon={<Scale className="h-6 w-6 text-[#0073B7]" />}
-              frequency="As of Today"
-              standard="FRS 102 Section 4"
+              frequency="As of Date"
+              standard="Financial Position"
               keyMetricLabel="Total Net Assets"
-              keyMetricValue="£284,950.50"
+              keyMetricValue={loading ? "..." : fmtCur(summary?.net_assets, currency)}
             />
 
             <ReportCard
               title="Trial Balance (General Ledger)"
               description="Comprehensive listing of all Chart of Accounts debit and credit closing balances verifying zero posting discrepancy."
               href="/app/accounting/trial-balance"
-              badge="Debit = Credit"
+              badge="Ledger"
               badgeColor="bg-purple-50 text-purple-700 border-purple-200"
               icon={<FileSpreadsheet className="h-6 w-6 text-purple-600" />}
-              frequency="Daily Continuous"
+              frequency="Real-time"
               standard="Double-Entry Core"
-              keyMetricLabel="Balanced Debit/Credit"
-              keyMetricValue="£116,350.50"
+              keyMetricLabel="Net Assets"
+              keyMetricValue={loading ? "..." : fmtCur(summary?.net_assets, currency)}
             />
           </div>
         </div>
@@ -283,28 +329,28 @@ export default function ReportsHubPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ReportCard
               title="Aged Receivables (Debtors Aging)"
-              description="Itemised customer ledger tracking overdue sales invoices across 1-30, 31-60, 61-90, and >90 day brackets with drill-down."
+              description="Itemised customer ledger tracking overdue sales invoices across Current, 1-30, 31-60, 61-90, and >90 day brackets."
               href="/app/reports/aged-receivables"
-              badge="Credit Control"
+              badge="Receivables"
               badgeColor="bg-blue-50 text-blue-700 border-blue-200"
               icon={<Users className="h-6 w-6 text-blue-600" />}
               frequency="Weekly"
               standard="Trade Receivables"
-              keyMetricLabel="Overdue >30 Days"
-              keyMetricValue="£1,970.00"
+              keyMetricLabel="Total Receivables"
+              keyMetricValue={loading ? "..." : fmtCur(summary?.debtors_outstanding, currency)}
             />
 
             <ReportCard
               title="Aged Payables (Creditors Aging)"
               description="Outstanding vendor obligations and supplier bills categorised by payment due date to ensure prompt payment compliance."
               href="/app/reports/aged-payables"
-              badge="Supplier Relations"
+              badge="Payables"
               badgeColor="bg-amber-50 text-amber-700 border-amber-200"
               icon={<Building2 className="h-6 w-6 text-amber-600" />}
               frequency="Weekly"
               standard="Trade Payables"
-              keyMetricLabel="Due Next 7 Days"
-              keyMetricValue="£4,300.00"
+              keyMetricLabel="Total Payables"
+              keyMetricValue={loading ? "..." : fmtCur(summary?.creditors_outstanding, currency)}
             />
           </div>
         </div>
@@ -312,15 +358,15 @@ export default function ReportsHubPage() {
         {/* ── SECTION 3: COMPLIANCE & EXPORT BANNER ── */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-sky-50 text-[#00A3C4] flex items-center justify-center flex-shrink-0">
+            <div className="h-12 w-12 rounded-xl bg-sky-50 text-[#0073B7] flex items-center justify-center flex-shrink-0">
               <BookOpen className="h-6 w-6" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-slate-900">
-                Audit Trail & Statutory Compliance Pack
+                Audit Trail & Double-Entry Ledger
               </h4>
               <p className="text-xs text-slate-600 mt-0.5">
-                All statements are linked to underlying journal entries and source documents. Compatible with HMRC MTD and UK Companies House statutory filing formats.
+                All financial reports are linked directly to posted general ledger journals and verified double-entry balances.
               </p>
             </div>
           </div>

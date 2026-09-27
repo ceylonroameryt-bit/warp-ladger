@@ -8,13 +8,15 @@ import DashboardLayout from "@/components/DashboardLayout";
 import CustomerSelector from "@/components/CustomerSelector";
 import InvoiceLineEditor, { LineItem, TaxRate } from "@/components/InvoiceLineEditor";
 import InvoiceTotalsPanel from "@/components/InvoiceTotalsPanel";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 export default function EditInvoicePage() {
   const { id } = useParams() as { id: string };
   const router = useRouter();
+  const { activeOrganisationId } = useOrganisation();
+  const activeOrgId = activeOrganisationId || "";
 
   const [invoice, setInvoice] = useState<any>(null);
   const [customer, setCustomer] = useState<any>(null);
@@ -32,25 +34,6 @@ export default function EditInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0 && orgs[0].id) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-    loadOrg();
-  }, []);
 
   useEffect(() => {
     async function load() {

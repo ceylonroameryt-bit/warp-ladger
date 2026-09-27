@@ -593,7 +593,7 @@ export default function NewContactPage() {
             </div>
           </div>
 
-          {/* Form Actions (Signature Xero bottom bar) */}
+          {/* Form Actions bar */}
           <div className="flex items-center justify-end gap-3 pt-2">
             <Link
               href="/app/contacts"

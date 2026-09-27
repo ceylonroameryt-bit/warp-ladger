@@ -5,7 +5,7 @@ Endpoints: register, login, logout, refresh, verify-email, forgot-password, rese
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, Request, Response
+from fastapi import APIRouter, Cookie, Depends, Header, Request, Response
 
 from app.auth.schemas import (
     ChangePasswordRequest,
@@ -139,13 +139,24 @@ async def refresh(
 @router.post("/logout", status_code=200)
 async def logout(
     response: Response,
-    current_user: CurrentUser,
     db: DBSession,
     wl_refresh_token: Optional[str] = Cookie(default=None),
+    access_token: Optional[str] = Cookie(default=None, alias="wl_access_token"),
+    authorization: Optional[str] = Header(default=None),
 ):
     """Revoke the current session and clear cookies."""
+    user_id = None
+    token = access_token or (authorization[7:] if authorization and authorization.startswith("Bearer ") else None)
+    if token:
+        try:
+            from app.core.security import decode_token
+            payload = decode_token(token, expected_type="access")
+            user_id = uuid.UUID(payload["sub"])
+        except Exception:
+            pass
+
     service = AuthService(db)
-    await service.logout(refresh_token=wl_refresh_token, user_id=current_user.id)
+    await service.logout(refresh_token=wl_refresh_token, user_id=user_id)
     _clear_auth_cookies(response)
     return {"message": "Logged out successfully."}
 

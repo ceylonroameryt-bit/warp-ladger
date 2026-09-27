@@ -20,9 +20,8 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface Account {
   id: string;
@@ -46,23 +45,6 @@ const CLASS_COLORS: Record<string, { bg: string; text: string; border: string }>
   EXPENSE: { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
 };
 
-const DEMO_ACCOUNTS: Account[] = [
-  { id: "1", code: "1000", name: "Operating Bank Account", account_class: "ASSET", subtype: "BANK", currency: "GBP", is_active: true, is_system: true, normal_balance: "DEBIT", current_balance: 45200.50 },
-  { id: "2", code: "1100", name: "Accounts Receivable", account_class: "ASSET", subtype: "CURRENT_ASSET", currency: "GBP", is_active: true, is_system: true, normal_balance: "DEBIT", current_balance: 18450.00 },
-  { id: "3", code: "1200", name: "Prepayments & Accrued Income", account_class: "ASSET", subtype: "PREPAYMENT", currency: "GBP", is_active: true, is_system: false, normal_balance: "DEBIT", current_balance: 2400.00 },
-  { id: "4", code: "1500", name: "Office Equipment & Tech", account_class: "ASSET", subtype: "FIXED_ASSET", currency: "GBP", is_active: true, is_system: false, normal_balance: "DEBIT", current_balance: 8500.00 },
-  { id: "5", code: "2000", name: "Accounts Payable", account_class: "LIABILITY", subtype: "CURRENT_LIABILITY", currency: "GBP", is_active: true, is_system: true, normal_balance: "CREDIT", current_balance: 12100.00 },
-  { id: "6", code: "2200", name: "VAT Output Tax", account_class: "LIABILITY", subtype: "TAX_LIABILITY", currency: "GBP", is_active: true, is_system: true, normal_balance: "CREDIT", current_balance: 4560.00 },
-  { id: "7", code: "2210", name: "PAYE & National Insurance Payable", account_class: "LIABILITY", subtype: "TAX_LIABILITY", currency: "GBP", is_active: true, is_system: false, normal_balance: "CREDIT", current_balance: 3120.00 },
-  { id: "8", code: "3000", name: "Owner's Equity & Share Capital", account_class: "EQUITY", subtype: "EQUITY", currency: "GBP", is_active: true, is_system: false, normal_balance: "CREDIT", current_balance: 25000.00 },
-  { id: "9", code: "3200", name: "Retained Earnings", account_class: "EQUITY", subtype: "RETAINED_EARNINGS", currency: "GBP", is_active: true, is_system: true, normal_balance: "CREDIT", current_balance: 14770.50 },
-  { id: "10", code: "4000", name: "General Consulting Sales", account_class: "REVENUE", subtype: "OPERATING_REVENUE", currency: "GBP", is_active: true, is_system: false, normal_balance: "CREDIT", current_balance: 68400.00 },
-  { id: "11", code: "4100", name: "Software License Revenue", account_class: "REVENUE", subtype: "OPERATING_REVENUE", currency: "GBP", is_active: true, is_system: false, normal_balance: "CREDIT", current_balance: 15200.00 },
-  { id: "12", code: "5000", name: "Direct Cost of Goods Sold", account_class: "EXPENSE", subtype: "COST_OF_GOODS_SOLD", currency: "GBP", is_active: true, is_system: false, normal_balance: "DEBIT", current_balance: 19800.00 },
-  { id: "13", code: "6000", name: "Rent & Office Rates", account_class: "EXPENSE", subtype: "OPERATING_EXPENSE", currency: "GBP", is_active: true, is_system: false, normal_balance: "DEBIT", current_balance: 12000.00 },
-  { id: "14", code: "6100", name: "Salaries & Wages", account_class: "EXPENSE", subtype: "OPERATING_EXPENSE", currency: "GBP", is_active: true, is_system: false, normal_balance: "DEBIT", current_balance: 33800.00 },
-];
-
 function fmtCur(amount: number | string | undefined, currency = "GBP") {
   if (amount === undefined || amount === null) return "£0.00";
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -70,8 +52,9 @@ function fmtCur(amount: number | string | undefined, currency = "GBP") {
 }
 
 function ChartOfAccountsContent() {
-  const [accounts, setAccounts] = useState<Account[]>(DEMO_ACCOUNTS);
-  const [loading, setLoading] = useState(false);
+  const { activeOrganisationId } = useOrganisation();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [seeding, setSeeding] = useState(false);
@@ -92,49 +75,33 @@ function ChartOfAccountsContent() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const fetchAccounts = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      let url = `${API_BASE}/api/v1/organisations/${ORG_ID}/accounts`;
+      let url = `/api/v1/organisations/${activeOrganisationId}/accounts`;
       if (activeTab !== "ALL") url += `?account_class=${activeTab}`;
 
-      const res = await fetch(url, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          setAccounts(data);
-        }
-      }
+      const data = await api.get<Account[]>(url);
+      setAccounts(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.warn("Using offline demo COA list", err);
+      setAccounts([]);
     } finally {
       setLoading(false);
     }
-  }, [activeTab]);
+  }, [activeOrganisationId, activeTab]);
 
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
 
   const handleSeedStandard = async () => {
+    if (!activeOrganisationId) return;
     setSeeding(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounts/seed-standard`, {
-        method: "POST",
-        headers,
-      });
-      if (res.ok) {
-        setSeedSuccess(true);
-        setTimeout(() => setSeedSuccess(false), 3000);
-        await fetchAccounts();
-      }
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/accounts/seed-standard`, {});
+      setSeedSuccess(true);
+      setTimeout(() => setSeedSuccess(false), 3000);
+      await fetchAccounts();
     } catch (err) {
       console.error(err);
     } finally {
@@ -144,24 +111,11 @@ function ChartOfAccountsContent() {
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeOrganisationId) return;
     setSubmitting(true);
     setErrorMsg("");
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounts`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to create account");
-      }
-
+      await api.post(`/api/v1/organisations/${activeOrganisationId}/accounts`, formData);
       setModalOpen(false);
       setFormData({
         code: "",
@@ -209,7 +163,7 @@ function ChartOfAccountsContent() {
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">Chart of Accounts</h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              General ledger master accounts for double-entry bookkeeping, financial statements, and tax compliance.
+              General ledger master accounts for double-entry bookkeeping, financial statements, and tax reporting.
             </p>
           </div>
 
@@ -220,7 +174,7 @@ function ChartOfAccountsContent() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 text-sky-600 ${seeding ? "animate-spin" : ""}`} />
-              {seedSuccess ? "Standard Seeded!" : "Seed UK GAAP Template"}
+              {seedSuccess ? "Standard Seeded!" : "Seed Standard Accounts"}
             </button>
 
             <button

@@ -28,18 +28,23 @@ import {
   Layers,
   FileSpreadsheet,
 } from "lucide-react";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
-  activeOrgName?: string;
 }
 
-export default function DashboardLayout({
-  children,
-  activeOrgName = "Acme Corp UK Ltd",
-}: DashboardLayoutProps) {
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
+
+  const {
+    user,
+    activeOrganisation,
+    organisations,
+    switchOrganisation,
+    logout,
+  } = useOrganisation();
 
   // Dropdown states
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
@@ -70,7 +75,7 @@ export default function DashboardLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Top Nav Items (Xero Modern Accounting Hierarchy)
+  // Top Nav Items (Warp Ladger Accounting Architecture)
   interface NavTab {
     name: string;
     href: string;
@@ -85,30 +90,19 @@ export default function DashboardLayout({
       active: pathname === "/app/dashboard" || pathname === "/app",
     },
     {
-      name: "Business (Sales)",
+      name: "Sales",
       href: "/app/sales/invoices",
       active: pathname.startsWith("/app/sales"),
     },
     {
-      name: "Purchases (Bills)",
+      name: "Purchases",
       href: "/app/purchases/bills",
       active: pathname.startsWith("/app/purchases"),
     },
     {
-      name: "Payments",
+      name: "Banking",
       href: "/app/payments",
       active: pathname.startsWith("/app/payments"),
-    },
-    {
-      name: "Documents",
-      href: "/app/documents",
-      active: pathname.startsWith("/app/documents"),
-      badge: "Smart AI",
-    },
-    {
-      name: "Contacts",
-      href: "/app/contacts",
-      active: pathname.startsWith("/app/contacts"),
     },
     {
       name: "Accounting",
@@ -121,15 +115,36 @@ export default function DashboardLayout({
       active: pathname.startsWith("/app/reports"),
     },
     {
-      name: "Accounting Settings",
-      href: "/app/settings/payment-terms",
-      active: pathname.startsWith("/app/settings"),
+      name: "Documents",
+      href: "/app/documents",
+      active: pathname.startsWith("/app/documents"),
+      badge: "Smart Capture",
     },
   ];
 
+  // User details
+  const userName = user?.full_name || user?.email?.split("@")[0] || "User";
+  const userEmail = user?.email || "";
+  const userInitials = (user?.full_name
+    ? user.full_name
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : userEmail.slice(0, 2).toUpperCase()) || "WL";
+
+  const orgName = activeOrganisation?.name || "Active Workspace";
+  const orgInitials = orgName
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "WL";
+
   return (
     <div className="min-h-screen bg-[#F4F6F9] text-slate-800 flex flex-col font-sans antialiased">
-      {/* ── TOP NAVIGATION BAR (Signature Xero / Deep Navy Header) ── */}
+      {/* ── TOP NAVIGATION BAR (Warp Ladger Primary Header) ── */}
       <header className="bg-[#0A2540] text-white sticky top-0 z-40 shadow-sm">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
           {/* Left: Brand + Org Switcher + Main Nav */}
@@ -141,14 +156,14 @@ export default function DashboardLayout({
               title="Warp Ladger Commercial Accounting"
             >
               <div className="h-8 w-8 rounded-lg bg-[#00A3C4] flex items-center justify-center font-black text-white text-base shadow-sm group-hover:bg-[#00bfe6] transition-colors">
-                L
+                W
               </div>
               <div className="flex flex-col">
                 <span className="font-bold tracking-tight text-white text-sm leading-tight">
-                  Ladger
+                  Warp Ladger
                 </span>
                 <span className="text-[10px] text-sky-300 font-medium tracking-wide">
-                  ACCOUNTING
+                  COMMERCIAL ACCOUNTING
                 </span>
               </div>
             </Link>
@@ -164,29 +179,54 @@ export default function DashboardLayout({
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-slate-800/70 text-slate-100 transition-colors text-xs font-semibold"
               >
                 <div className="h-5 w-5 rounded bg-sky-600/30 text-sky-300 border border-sky-400/30 flex items-center justify-center text-[10px] font-bold">
-                  AC
+                  {orgInitials}
                 </div>
-                <span className="max-w-[150px] truncate">{activeOrgName}</span>
+                <span className="max-w-[150px] truncate">{orgName}</span>
                 <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
               </button>
 
               {orgDropdownOpen && (
-                <div className="absolute left-0 mt-2 w-64 rounded-lg bg-white border border-slate-200 shadow-xl py-2 z-50 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
-                  <div className="px-3 py-1.5 border-b border-slate-100">
+                <div className="absolute left-0 mt-2 w-72 rounded-lg bg-white border border-slate-200 shadow-xl py-2 z-50 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-2 border-b border-slate-100">
                     <p className="text-[11px] font-semibold uppercase text-slate-500 tracking-wider">
                       Current Organisation
                     </p>
-                    <p className="text-xs font-bold text-slate-900 mt-0.5">{activeOrgName}</p>
-                    <p className="text-[10px] text-slate-500">Co. No: 12345678 · VAT: GB123456789</p>
+                    <p className="text-xs font-bold text-slate-900 mt-0.5">{orgName}</p>
+                    {(activeOrganisation?.company_number || activeOrganisation?.vat_number) && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {activeOrganisation.company_number && `Co. No: ${activeOrganisation.company_number}`}
+                        {activeOrganisation.company_number && activeOrganisation.vat_number && " · "}
+                        {activeOrganisation.vat_number && `VAT: ${activeOrganisation.vat_number}`}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-sky-700 font-medium mt-0.5">
+                      Base Currency: {activeOrganisation?.currency || "GBP"}
+                    </p>
                   </div>
-                  <div className="py-1">
-                    <div className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-slate-50 cursor-pointer">
-                      <span className="font-medium text-slate-700">Acme Holdings Ltd</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                        Holding
-                      </span>
+
+                  {organisations.length > 1 && (
+                    <div className="py-1">
+                      <p className="px-3 py-1 text-[10px] font-semibold uppercase text-slate-400">
+                        Switch Workspace
+                      </p>
+                      {organisations.map((org) => (
+                        <div
+                          key={org.id}
+                          onClick={() => {
+                            switchOrganisation(org.id);
+                            setOrgDropdownOpen(false);
+                          }}
+                          className={`px-3 py-1.5 flex items-center justify-between text-xs hover:bg-slate-50 cursor-pointer ${
+                            org.id === activeOrganisation?.id ? "bg-sky-50 font-bold text-sky-700" : "text-slate-700"
+                          }`}
+                        >
+                          <span className="truncate">{org.name}</span>
+                          {org.id === activeOrganisation?.id && <Check className="h-3.5 w-3.5 text-sky-600" />}
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  )}
+
                   <div className="pt-1 mt-1 border-t border-slate-100 px-3">
                     <Link
                       href="/app/settings/payment-terms"
@@ -241,7 +281,7 @@ export default function DashboardLayout({
               />
             </div>
 
-            {/* Quick Create "+" Dropdown (Vibrant Xero Cyan) */}
+            {/* Quick Create "+" Dropdown */}
             <div className="relative" ref={createRef}>
               <button
                 type="button"
@@ -329,17 +369,18 @@ export default function DashboardLayout({
               title="Notifications"
             >
               <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[#00A3C4]" />
             </button>
 
             {/* Help / Support */}
-            <button
-              type="button"
+            <Link
+              href="https://github.com/ceylonroameryt-bit/warp-ladger"
+              target="_blank"
+              rel="noopener noreferrer"
               className="h-8 w-8 rounded-md hover:bg-slate-800/80 text-slate-300 hover:text-white flex items-center justify-center transition-colors hidden sm:flex"
-              title="Help & Support"
+              title="Documentation & Support"
             >
               <HelpCircle className="h-4 w-4" />
-            </button>
+            </Link>
 
             {/* User Profile Avatar */}
             <div className="relative" ref={userRef}>
@@ -349,21 +390,29 @@ export default function DashboardLayout({
                 className="flex items-center gap-1.5 p-1 rounded-md hover:bg-slate-800/80 transition-colors"
               >
                 <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-[#00A3C4] to-blue-700 text-white flex items-center justify-center text-xs font-bold shadow-inner">
-                  PS
+                  {userInitials}
                 </div>
                 <ChevronDown className="h-3 w-3 text-slate-400 hidden sm:block" />
               </button>
 
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-52 rounded-lg bg-white border border-slate-200 shadow-xl py-2 z-50 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
-                  <div className="px-3 py-1.5 border-b border-slate-100">
-                    <p className="text-xs font-bold text-slate-900">Poorna Sujampathi</p>
-                    <p className="text-[11px] text-slate-500 truncate">owner@warpladger.com</p>
-                    <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                      Organisation Owner
+                <div className="absolute right-0 mt-2 w-56 rounded-lg bg-white border border-slate-200 shadow-xl py-2 z-50 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-2 border-b border-slate-100">
+                    <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{userEmail}</p>
+                    <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 font-semibold border border-sky-200">
+                      {user?.is_superadmin ? "Super Admin" : "Active Member"}
                     </span>
                   </div>
                   <div className="py-1">
+                    <Link
+                      href="/app/contacts"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <Users className="h-3.5 w-3.5 text-slate-400" />
+                      Contacts & Directory
+                    </Link>
                     <Link
                       href="/app/settings/payment-terms"
                       onClick={() => setUserMenuOpen(false)}
@@ -382,10 +431,17 @@ export default function DashboardLayout({
                     </Link>
                   </div>
                   <div className="pt-1 border-t border-slate-100">
-                    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer font-medium">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer font-medium"
+                    >
                       <LogOut className="h-3.5 w-3.5 text-rose-500" />
                       Sign Out
-                    </div>
+                    </button>
                   </div>
                 </div>
               )}
@@ -421,7 +477,7 @@ export default function DashboardLayout({
         )}
       </header>
 
-      {/* ── SECONDARY SUB-HEADER / WORKSPACE BAR (Context-sensitive Xero Header) ── */}
+      {/* ── SECONDARY SUB-HEADER / WORKSPACE BAR ── */}
       <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between py-2.5 overflow-x-auto gap-4">
@@ -454,7 +510,7 @@ export default function DashboardLayout({
                     className="px-3 py-1.5 rounded-md font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center gap-1"
                   >
                     <Sparkles className="h-3 w-3 text-sky-500" />
-                    AI Hubdoc Inbox
+                    Smart Document Inbox
                   </Link>
                 </>
               )}
@@ -754,7 +810,7 @@ export default function DashboardLayout({
               )}
             </div>
 
-            {/* Context Primary Action Button (Xero Style) */}
+            {/* Context Primary Action Button */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {pathname.startsWith("/app/reports") && (
                 <Link
@@ -840,16 +896,25 @@ export default function DashboardLayout({
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">Warp Ladger</span>
             <span>·</span>
-            <span>Commercial Accounting Platform</span>
+            <span>Double-entry commercial accounting</span>
             <span>·</span>
             <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">
-              v0.3.0
+              v1.0.0
             </span>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
-            <span className="hover:text-slate-700 cursor-pointer">Security & Compliance</span>
-            <span className="hover:text-slate-700 cursor-pointer">Audit Logging</span>
-            <span className="hover:text-slate-700 cursor-pointer">Support</span>
+            <span className="text-slate-600 font-medium">Tenant Isolated</span>
+            <span>·</span>
+            <span className="text-slate-600 font-medium">Audit-trailed</span>
+            <span>·</span>
+            <Link
+              href="https://github.com/ceylonroameryt-bit/warp-ladger"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-slate-700 underline"
+            >
+              Documentation & Support
+            </Link>
           </div>
         </div>
       </footer>

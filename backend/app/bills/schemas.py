@@ -242,11 +242,20 @@ class DuplicateCheckResponse(BaseModel):
 
 # ─── Purchases Dashboard Metrics ─────────────────────────────
 class PurchasesMetricsResponse(BaseModel):
-    awaiting_approval_count: int
-    awaiting_approval_amount: Decimal
-    awaiting_payment_count: int
-    awaiting_payment_amount: Decimal
-    overdue_count: int
-    overdue_amount: Decimal
-    this_month_count: int
-    this_month_amount: Decimal
+    draft_count: int = 0
+    draft_amount: Decimal = Decimal("0.00")
+    draft_total: str = "0.00"
+    awaiting_approval_count: int = 0
+    awaiting_approval_amount: Decimal = Decimal("0.00")
+    awaiting_approval_total: str = "0.00"
+    awaiting_payment_count: int = 0
+    awaiting_payment_amount: Decimal = Decimal("0.00")
+    awaiting_payment_total: str = "0.00"
+    overdue_count: int = 0
+    overdue_amount: Decimal = Decimal("0.00")
+    overdue_total: str = "0.00"
+    paid_count: int = 0
+    paid_amount: Decimal = Decimal("0.00")
+    paid_total: str = "0.00"
+    this_month_count: int = 0
+    this_month_amount: Decimal = Decimal("0.00")

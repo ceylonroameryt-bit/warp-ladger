@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import BillStatusBadge from "@/components/BillStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
 
 interface BillItem {
   id: string;
@@ -85,46 +85,28 @@ function BillListContent() {
   const [loading, setLoading] = useState(true);
   const [selectedBills, setSelectedBills] = useState<string[]>([]);
 
+  const { activeOrganisationId } = useOrganisation();
+
   const [stats, setStats] = useState<BillStats>({
-    draftCount: 1,
-    draftTotal: 490.00,
-    approvalCount: 2,
-    approvalTotal: 1200.00,
-    awaitingCount: 6,
-    awaitingTotal: 8640.20,
-    overdueCount: 2,
-    overdueTotal: 1250.00,
-    paidCount: 18,
-    paidTotal: 22400.00,
+    draftCount: 0,
+    draftTotal: 0,
+    approvalCount: 0,
+    approvalTotal: 0,
+    awaitingCount: 0,
+    awaitingTotal: 0,
+    overdueCount: 0,
+    overdueTotal: 0,
+    paidCount: 0,
+    paidTotal: 0,
   });
 
   const statusFilter = searchParams.get("status") ?? "";
   const page = parseInt(searchParams.get("page") ?? "1");
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "");
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
 
   const fetchBills = useCallback(async () => {
-    if (!orgId) return;
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -134,7 +116,7 @@ function BillListContent() {
       params.set("page_size", "20");
 
       const res = await fetch(
-        `${API_BASE}/api/v1/organisations/${orgId}/bills?${params.toString()}`,
+        `${API_BASE}/api/v1/organisations/${activeOrganisationId}/bills?${params.toString()}`,
         { credentials: "include" }
       );
       if (res.ok) {
@@ -148,51 +130,38 @@ function BillListContent() {
     } finally {
       setLoading(false);
     }
-  }, [orgId, statusFilter, search, page]);
+  }, [activeOrganisationId, statusFilter, search, page]);
 
-  // Load summary metrics across all bills
+  // Load summary metrics from authoritative server endpoint
   useEffect(() => {
+    if (!activeOrganisationId) return;
     async function loadStats() {
-      if (!orgId) return;
       try {
         const res = await fetch(
-          `${API_BASE}/api/v1/organisations/${orgId}/bills?page_size=200`,
+          `${API_BASE}/api/v1/organisations/${activeOrganisationId}/bills/metrics`,
           { credentials: "include" }
         );
         if (res.ok) {
           const data = await res.json();
-          const items: BillItem[] = data.items || [];
-          let dC = 0, dT = 0, apC = 0, apT = 0, awC = 0, awT = 0, oC = 0, oT = 0, pC = 0, pT = 0;
-          items.forEach((b) => {
-            const tot = typeof b.total === "string" ? parseFloat(b.total) : (b.total || 0);
-            if (b.effective_status === "DRAFT") {
-              dC++; dT += tot;
-            } else if (b.effective_status === "AWAITING_APPROVAL") {
-              apC++; apT += tot;
-            } else if (["APPROVED", "AWAITING_PAYMENT"].includes(b.effective_status)) {
-              awC++; awT += tot;
-            } else if (b.effective_status === "OVERDUE") {
-              oC++; oT += tot;
-            } else if (b.effective_status === "PAID") {
-              pC++; pT += tot;
-            }
+          setStats({
+            draftCount: data.draft_count ?? 0,
+            draftTotal: parseFloat(data.draft_total ?? "0"),
+            approvalCount: data.awaiting_approval_count ?? 0,
+            approvalTotal: parseFloat(data.awaiting_approval_total ?? "0"),
+            awaitingCount: data.awaiting_payment_count ?? 0,
+            awaitingTotal: parseFloat(data.awaiting_payment_total ?? "0"),
+            overdueCount: data.overdue_count ?? 0,
+            overdueTotal: parseFloat(data.overdue_total ?? "0"),
+            paidCount: data.paid_count ?? 0,
+            paidTotal: parseFloat(data.paid_total ?? "0"),
           });
-          if (items.length > 0) {
-            setStats({
-              draftCount: dC, draftTotal: dT,
-              approvalCount: apC, approvalTotal: apT,
-              awaitingCount: awC, awaitingTotal: awT,
-              overdueCount: oC, overdueTotal: oT,
-              paidCount: pC, paidTotal: pT,
-            });
-          }
         }
       } catch {
-        // keep defaults
+        // Retain 0
       }
     }
     loadStats();
-  }, []);
+  }, [activeOrganisationId]);
 
   useEffect(() => {
     fetchBills();
@@ -233,7 +202,7 @@ function BillListContent() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* ── TOP HEADER (Xero Bills Title & Action Bar) ── */}
+        {/* ── TOP HEADER (Supplier Bills Title & Action Bar) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">Supplier Bills</h1>
@@ -267,7 +236,7 @@ function BillListContent() {
           </div>
         </div>
 
-        {/* ── SIGNATURE XERO STATUS METRIC TABS BANNER ── */}
+        {/* ── STATUS METRIC TABS BANNER ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button
             type="button"

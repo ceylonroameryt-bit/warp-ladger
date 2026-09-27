@@ -34,9 +34,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import BillStatusBadge from "@/components/BillStatusBadge";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface BillLine {
   id: string;
@@ -183,28 +183,10 @@ export default function BillDetailPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadDocType, setUploadDocType] = useState<string>("ORIGINAL_INVOICE");
   const [uploading, setUploading] = useState(false);
-
   const [actionInProgress, setActionInProgress] = useState(false);
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
 
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
 
   const fetchBill = async () => {
     if (!billId || !orgId) return;

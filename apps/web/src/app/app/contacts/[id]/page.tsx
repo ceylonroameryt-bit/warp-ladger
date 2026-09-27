@@ -34,153 +34,97 @@ import {
   Receipt,
 } from "lucide-react";
 
+import { useOrganisation } from "@/contexts/OrganisationContext";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
+
+interface ContactPerson {
+  id: string;
+  first_name: string;
+  last_name: string;
+  job_title?: string;
+  email?: string;
+  phone?: string;
+  is_primary: boolean;
+}
+
+interface ContactAddress {
+  id: string;
+  address_type: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  county?: string;
+  postcode: string;
+  country: string;
+}
+
+interface ContactNote {
+  id: string;
+  content: string;
+  author: string;
+  created_at: string;
+}
+
+interface ContactDetail {
+  id: string;
+  contact_type: "CUSTOMER" | "SUPPLIER" | "BOTH";
+  business_name: string;
+  legal_name?: string;
+  email?: string;
+  phone?: string;
+  mobile?: string;
+  website?: string;
+  company_number?: string;
+  vat_number?: string;
+  tax_identifier?: string;
+  currency: string;
+  payment_terms_name?: string;
+  reference?: string;
+  credit_limit?: number | null;
+  status: "ACTIVE" | "ARCHIVED";
+  created_at?: string;
+  updated_at?: string;
+  people: ContactPerson[];
+  addresses: ContactAddress[];
+  notes: ContactNote[];
+  documents: any[];
+  activity: any[];
+}
 
 export default function ContactDetailPage() {
   const params = useParams();
   const id = params?.id as string;
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
 
   const [activeTab, setActiveTab] = useState<
     "overview" | "people" | "addresses" | "financial" | "documents" | "notes" | "activity" | "bills"
   >("overview");
 
+  const [contact, setContact] = useState<ContactDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [supplierBills, setSupplierBills] = useState<any[]>([]);
   const [loadingBills, setLoadingBills] = useState(false);
-
-  // Sample contact data state
-  const [contact, setContact] = useState({
-    id: id || "c1-apex",
-    contact_type: "CUSTOMER" as "CUSTOMER" | "SUPPLIER" | "BOTH",
-    business_name: "Apex Innovations Ltd",
-    legal_name: "Apex Innovations Limited",
-    email: "accounts@apexinnovations.co.uk",
-    phone: "+44 20 7946 0912",
-    mobile: "+44 7700 900123",
-    website: "https://apexinnovations.co.uk",
-    company_number: "12345678",
-    vat_number: "GB123456789",
-    tax_identifier: "UTR-88271109",
-    currency: "GBP",
-    payment_terms_name: "30 days",
-    reference: "CUS-00128",
-    credit_limit: 10000,
-    status: "ACTIVE" as "ACTIVE" | "ARCHIVED",
-    created_at: "2026-09-01T10:00:00Z",
-    updated_at: "2026-09-17T14:30:00Z",
-    people: [
-      {
-        id: "p1",
-        first_name: "Jane",
-        last_name: "Doe",
-        job_title: "Finance Director",
-        email: "jane@apexinnovations.co.uk",
-        phone: "+44 20 7946 0913",
-        is_primary: true,
-      },
-      {
-        id: "p2",
-        first_name: "Arthur",
-        last_name: "Pendleton",
-        job_title: "Managing Director",
-        email: "arthur@apexinnovations.co.uk",
-        phone: "+44 20 7946 0910",
-        is_primary: false,
-      },
-    ],
-    addresses: [
-      {
-        id: "a1",
-        address_type: "BILLING",
-        line1: "100 Bishopsgate",
-        line2: "Floor 14",
-        city: "London",
-        county: "Greater London",
-        postcode: "EC2N 4AG",
-        country: "GB",
-      },
-      {
-        id: "a2",
-        address_type: "SHIPPING",
-        line1: "Unit 3, Apex Logistics Park",
-        city: "Dartford",
-        county: "Kent",
-        postcode: "DA1 5FS",
-        country: "GB",
-      },
-    ],
-    notes: [
-      {
-        id: "n1",
-        content: "Customer requested all invoices be sent with Purchase Order numbers attached.",
-        author: "Alice Owner",
-        created_at: "2026-09-05T11:20:00Z",
-      },
-      {
-        id: "n2",
-        content: "Credit limit verified via Companies House search. Approved up to £10,000.",
-        author: "Bob Accountant",
-        created_at: "2026-09-02T09:15:00Z",
-      },
-    ],
-    documents: [
-      {
-        id: "d1",
-        filename: "Apex_NDA_Signed_2026.pdf",
-        size: "245 KB",
-        created_at: "2026-09-01T14:00:00Z",
-      },
-    ],
-    activity: [
-      {
-        id: "act-1",
-        action: "Updated contact details",
-        user: "Bob Accountant",
-        timestamp: "Yesterday at 14:30",
-      },
-      {
-        id: "act-2",
-        action: "Added billing address: 100 Bishopsgate, London",
-        user: "Alice Owner",
-        timestamp: "Sep 01, 2026 at 10:15",
-      },
-      {
-        id: "act-3",
-        action: "Contact created",
-        user: "Alice Owner",
-        timestamp: "Sep 01, 2026 at 10:00",
-      },
-    ],
-  });
-
-  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-
-  // Load active organisation
-  useEffect(() => {
-    async function loadOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/");
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) setActiveOrgId(orgs[0].id);
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    loadOrg();
-  }, []);
 
   // Fetch live contact details
   useEffect(() => {
     async function fetchContact() {
-      if (!activeOrgId || !id || id.startsWith("c")) return;
+      if (!orgId || !id) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
       try {
-        const res = await fetch(`/api/v1/organisations/${activeOrgId}/contacts/${id}`);
+        const res = await fetch(`/api/v1/organisations/${orgId}/contacts/${id}`, {
+          credentials: "include",
+        });
         if (res.ok) {
           const data = await res.json();
-          setContact((prev) => ({
-            ...prev,
+          setContact({
             ...data,
             people: data.people || [],
             addresses: data.addresses || [],
@@ -190,20 +134,28 @@ export default function ContactDetailPage() {
               author: n.created_by_name || "Team Member",
               created_at: n.created_at,
             })),
-          }));
+            documents: data.documents || [],
+            activity: data.activity || [],
+          });
+        } else if (res.status === 404) {
+          setError("Contact not found.");
+        } else {
+          setError("Failed to load contact.");
         }
       } catch {
-        // Fallback to initial demo data
+        setError("Network error while loading contact.");
+      } finally {
+        setLoading(false);
       }
     }
     fetchContact();
-  }, [activeOrgId, id]);
+  }, [orgId, id]);
 
   const [newNote, setNewNote] = useState("");
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim()) return;
+    if (!newNote.trim() || !contact) return;
 
     const noteContent = newNote.trim();
     setNewNote("");
@@ -216,16 +168,17 @@ export default function ContactDetailPage() {
       created_at: new Date().toISOString(),
     };
 
-    setContact((prev) => ({
+    setContact((prev) => (prev ? {
       ...prev,
       notes: [tempNote, ...prev.notes],
-    }));
+    } : null));
 
-    if (activeOrgId && !id.startsWith("c")) {
+    if (orgId && !id.startsWith("c")) {
       try {
-        await fetch(`/api/v1/organisations/${activeOrgId}/contacts/${id}/notes`, {
+        await fetch(`/api/v1/organisations/${orgId}/contacts/${id}/notes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ content: noteContent }),
         });
       } catch {
@@ -235,18 +188,20 @@ export default function ContactDetailPage() {
   };
 
   const toggleArchive = async () => {
+    if (!contact) return;
     const isArchived = contact.status === "ARCHIVED";
     const endpoint = isArchived ? "restore" : "archive";
 
-    setContact((prev) => ({
+    setContact((prev) => (prev ? {
       ...prev,
       status: isArchived ? "ACTIVE" : "ARCHIVED",
-    }));
+    } : null));
 
-    if (activeOrgId && !id.startsWith("c")) {
+    if (orgId && !id.startsWith("c")) {
       try {
-        await fetch(`/api/v1/organisations/${activeOrgId}/contacts/${id}/${endpoint}`, {
+        await fetch(`/api/v1/organisations/${orgId}/contacts/${id}/${endpoint}`, {
           method: "POST",
+          credentials: "include",
         });
       } catch {
         // Ignored
@@ -256,10 +211,12 @@ export default function ContactDetailPage() {
 
   useEffect(() => {
     async function fetchBills() {
-      if (!activeOrgId || !id || id.startsWith("c")) return;
+      if (!orgId || !id || id.startsWith("c")) return;
       setLoadingBills(true);
       try {
-        const res = await fetch(`/api/v1/organisations/${activeOrgId}/bills?supplier_id=${id}&page_size=50`);
+        const res = await fetch(`/api/v1/organisations/${orgId}/bills?supplier_id=${id}&page_size=50`, {
+          credentials: "include",
+        });
         if (res.ok) {
           const data = await res.json();
           setSupplierBills(data.items || []);
@@ -271,7 +228,30 @@ export default function ContactDetailPage() {
       }
     }
     fetchBills();
-  }, [activeOrgId, id]);
+  }, [orgId, id]);
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-6xl mx-auto p-12 text-center text-xs text-slate-500">
+          Loading contact details...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error || !contact) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-6xl mx-auto p-12 text-center space-y-4">
+          <p className="text-sm text-red-600 font-medium">{error || "Contact not found."}</p>
+          <Link href="/app/contacts" className="text-xs text-[#0073B7] hover:underline">
+            ← Back to Contacts
+          </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -285,7 +265,7 @@ export default function ContactDetailPage() {
           Contacts
         </Link>
 
-        {/* ── Contact Header Banner (Xero style profile card) ── */}
+        {/* ── Contact Header Banner (Profile card) ── */}
         <div className="p-6 rounded-lg border border-slate-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
             <div className="h-14 w-14 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-xl flex-shrink-0">
@@ -375,7 +355,7 @@ export default function ContactDetailPage() {
           </div>
         </div>
 
-        {/* ── Sub-navigation Horizontal Tabs (Signature Xero Contact Tabs) ── */}
+        {/* ── Sub-navigation Horizontal Tabs ── */}
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
           <div className="flex items-center border-b border-slate-200 px-4 bg-white overflow-x-auto">
             {[
@@ -444,7 +424,7 @@ export default function ContactDetailPage() {
                     <dd className="text-slate-900 font-medium">{contact.payment_terms_name}</dd>
                     <dt className="text-slate-500 font-medium">Credit Limit:</dt>
                     <dd className="text-slate-900 font-medium">
-                      £{contact.credit_limit.toLocaleString()}
+                      {contact.credit_limit != null ? `£${contact.credit_limit.toLocaleString()}` : "None"}
                     </dd>
                     <dt className="text-slate-500 font-medium">Account Code:</dt>
                     <dd className="text-slate-900 font-mono">{contact.reference}</dd>
@@ -663,7 +643,7 @@ export default function ContactDetailPage() {
                   <div className="flex justify-between py-1.5 border-b border-slate-200">
                     <span className="text-slate-500">Credit Limit</span>
                     <span className="font-semibold text-slate-900">
-                      £{contact.credit_limit.toLocaleString()}
+                      {contact.credit_limit != null ? `£${contact.credit_limit.toLocaleString()}` : "None"}
                     </span>
                   </div>
                   <div className="flex justify-between py-1.5">

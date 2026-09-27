@@ -34,7 +34,7 @@ class StorageBackend(ABC):
         self,
         *,
         key: str,
-        expires_in: int = 3600,
+        expires_in: int = 900,
         bucket: Optional[str] = None,
     ) -> str:
         """Generate a pre-signed download URL."""

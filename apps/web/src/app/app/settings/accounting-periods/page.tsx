@@ -15,9 +15,8 @@ import {
   Settings2,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface AccountingSettings {
   lock_date?: string;
@@ -41,41 +40,16 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DEMO_PERIODS: FinancialPeriod[] = [
-  {
-    id: "p1",
-    period_name: "FY 2025 Annual Closed",
-    start_date: "2025-01-01",
-    end_date: "2025-12-31",
-    is_locked: true,
-    locked_at: "2026-01-15T18:00:00Z",
-    lock_reason: "Statutory year-end accounts filed with Companies House & HMRC",
-  },
-  {
-    id: "p2",
-    period_name: "Q1 2026",
-    start_date: "2026-01-01",
-    end_date: "2026-03-31",
-    is_locked: false,
-  },
-  {
-    id: "p3",
-    period_name: "Q2 2026",
-    start_date: "2026-04-01",
-    end_date: "2026-06-30",
-    is_locked: false,
-  },
-];
-
 function AccountingPeriodsContent() {
+  const { activeOrganisationId } = useOrganisation();
   const [settings, setSettings] = useState<AccountingSettings>({
-    lock_date: "2025-12-31",
+    lock_date: "",
     financial_year_end_month: 3,
     financial_year_end_day: 31,
     allow_prior_period_posting: false,
   });
-  const [periods, setPeriods] = useState<FinancialPeriod[]>(DEMO_PERIODS);
-  const [loading, setLoading] = useState(false);
+  const [periods, setPeriods] = useState<FinancialPeriod[]>([]);
+  const [loading, setLoading] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
@@ -92,33 +66,32 @@ function AccountingPeriodsContent() {
   const [periodError, setPeriodError] = useState("");
 
   const fetchData = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       // Settings
-      const resSet = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounting/settings`, { headers });
-      if (resSet.ok) {
-        const s = await resSet.json();
+      const s = await api.get<AccountingSettings>(
+        `/api/v1/organisations/${activeOrganisationId}/accounting/settings`
+      );
+      if (s) {
         setSettings(s);
       }
 
       // Periods
-      const resPer = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounting/periods`, { headers });
-      if (resPer.ok) {
-        const p = await resPer.json();
-        if (p && p.length > 0) {
-          setPeriods(p);
-        }
+      const p = await api.get<FinancialPeriod[]>(
+        `/api/v1/organisations/${activeOrganisationId}/accounting/periods`
+      );
+      if (p && Array.isArray(p)) {
+        setPeriods(p);
+      } else {
+        setPeriods([]);
       }
     } catch (err) {
-      console.warn("Using demo periods data", err);
+      setPeriods([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeOrganisationId]);
 
   useEffect(() => {
     fetchData();
@@ -126,25 +99,15 @@ function AccountingPeriodsContent() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeOrganisationId) return;
     setSavingSettings(true);
     setSettingsSuccess(false);
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounting/settings`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(settings),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to update accounting settings");
-      }
-
+      await api.put(
+        `/api/v1/organisations/${activeOrganisationId}/accounting/settings`,
+        settings
+      );
       setSettingsSuccess(true);
       setTimeout(() => setSettingsSuccess(false), 3000);
     } catch (err: any) {
@@ -155,25 +118,18 @@ function AccountingPeriodsContent() {
   };
 
   const handleToggleLock = async (period: FinancialPeriod) => {
+    if (!activeOrganisationId) return;
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounting/periods/${period.id}/lock`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
+      await api.post(
+        `/api/v1/organisations/${activeOrganisationId}/accounting/periods`,
+        {
+          period_name: period.period_name,
+          start_date: period.start_date,
+          end_date: period.end_date,
           is_locked: !period.is_locked,
           lock_reason: !period.is_locked ? "Closed by Accountant" : undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to toggle period lock");
-      }
-
+        }
+      );
       await fetchData();
     } catch (err: any) {
       alert(err.message || "Failed to update period lock status");
@@ -182,25 +138,15 @@ function AccountingPeriodsContent() {
 
   const handleCreatePeriod = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeOrganisationId) return;
     setSubmittingPeriod(true);
     setPeriodError("");
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/v1/organisations/${ORG_ID}/accounting/periods`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(newPeriodData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to create financial period");
-      }
-
+      await api.post(
+        `/api/v1/organisations/${activeOrganisationId}/accounting/periods`,
+        newPeriodData
+      );
       setModalOpen(false);
       setNewPeriodData({
         period_name: "",
@@ -211,7 +157,7 @@ function AccountingPeriodsContent() {
       });
       await fetchData();
     } catch (err: any) {
-      setPeriodError(err.message || "Failed to create period");
+      setPeriodError(err.message || "Failed to create financial period");
     } finally {
       setSubmittingPeriod(false);
     }

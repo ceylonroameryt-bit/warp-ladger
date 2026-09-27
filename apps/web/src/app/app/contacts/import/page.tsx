@@ -300,7 +300,7 @@ export default function ContactImportPage() {
           </button>
         </div>
 
-        {/* Step Wizard Bar (Signature Xero Wizard steps) */}
+        {/* Step Wizard Bar */}
         <div className="grid grid-cols-3 gap-3">
           {[
             { num: 1, title: "1. Select File", desc: "Upload CSV data" },

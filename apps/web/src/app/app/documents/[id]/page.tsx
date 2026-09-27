@@ -34,9 +34,9 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import SupplierSelector, { Supplier } from "@/components/SupplierSelector";
+import { useOrganisation } from "@/contexts/OrganisationContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface ExtractedLineItem {
   id?: string;
@@ -93,88 +93,18 @@ interface DocumentDetail {
   raw_text?: string;
 }
 
-const DEMO_DETAIL: DocumentDetail = {
-  id: "doc-sample-1",
-  original_filename: "AWS_Cloud_Invoice_AUG2026.pdf",
-  file_format: "application/pdf",
-  file_size_bytes: 348210,
-  status: "READY_FOR_BILL",
-  created_bill_id: null,
-  duplicate_status: "CLEAN",
-  has_bank_details_warning: true,
-  bank_details_warning_dismissed: false,
-  uploaded_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  processed_at: new Date(Date.now() - 1000 * 60 * 29).toISOString(),
-  document_type: "SUPPLIER_INVOICE",
-  overall_confidence: 0.98,
-  extracted_supplier_name: "Amazon Web Services EMEA SARL",
-  extracted_supplier_vat: "GB123456789",
-  extracted_supplier_address: "38 Avenue John F. Kennedy, L-1855 Luxembourg",
-  matched_contact_id: "c-aws",
-  matched_contact_name: "Amazon Web Services UK",
-  supplier_match_confidence: 0.99,
-  supplier_match_type: "EXACT_VAT",
-  extracted_invoice_number: "INV-EU-8849201",
-  extracted_invoice_date: "2026-08-31",
-  extracted_due_date: "2026-09-30",
-  extracted_po_number: "PO-2026-081",
-  extracted_subtotal: 1250.0,
-  extracted_tax_amount: 250.0,
-  extracted_total_amount: 1500.0,
-  currency: "GBP",
-  lines: [
-    {
-      position: 1,
-      description: "Amazon Elastic Compute Cloud (EC2) - Linux Instances",
-      quantity: 1,
-      unit_price: 750.0,
-      net_amount: 750.0,
-      tax_rate_percent: 20.0,
-      tax_amount: 150.0,
-      gross_amount: 900.0,
-      confidence: 0.99,
-    },
-    {
-      position: 2,
-      description: "Amazon Simple Storage Service (S3) - Standard Storage & Requests",
-      quantity: 1,
-      unit_price: 320.0,
-      net_amount: 320.0,
-      tax_rate_percent: 20.0,
-      tax_amount: 64.0,
-      gross_amount: 384.0,
-      confidence: 0.98,
-    },
-    {
-      position: 3,
-      description: "AWS CloudWatch & Elastic Load Balancing Monitoring",
-      quantity: 1,
-      unit_price: 180.0,
-      net_amount: 180.0,
-      tax_rate_percent: 20.0,
-      tax_amount: 36.0,
-      gross_amount: 216.0,
-      confidence: 0.96,
-    },
-  ],
-  detected_bank_details: {
-    sort_code: "20-00-00",
-    account_number: "88291039",
-    iban: "GB29BARC20000088291039",
-    bank_name: "Barclays Bank UK PLC",
-  },
-  raw_text:
-    "Amazon Web Services EMEA SARL\nVAT: GB123456789\nInvoice Number: INV-EU-8849201\nInvoice Date: 31-Aug-2026\nDue Date: 30-Sep-2026\nSubtotal: £1,250.00\nVAT 20%: £250.00\nTotal Amount Due: £1,500.00\nBank Details: Barclays Sort 20-00-00 Acc 88291039",
-};
+
 
 export default function DocumentReviewPage() {
   const params = useParams();
   const router = useRouter();
   const docId = params?.id as string;
 
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [doc, setDoc] = useState<DocumentDetail>(DEMO_DETAIL);
+  const [doc, setDoc] = useState<DocumentDetail | null>(null);
 
   // Document Viewer States
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -208,34 +138,15 @@ export default function DocumentReviewPage() {
   // Submitting state
   const [creatingBill, setCreatingBill] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
 
   // Load document
   useEffect(() => {
     async function loadDocument() {
-      if (!docId || !orgId) return;
+      if (!docId || !activeOrganisationId) return;
       setLoading(true);
+      setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/v1/organisations/${orgId}/documents/${docId}`, {
+        const res = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/documents/${docId}`, {
           credentials: "include",
         });
         if (res.ok) {
@@ -295,11 +206,12 @@ export default function DocumentReviewPage() {
           setDoc(loadedDoc);
           populateForm(loadedDoc);
         } else {
-          // Fallback to sample
-          populateForm(DEMO_DETAIL);
+          setError("Document could not be found or you do not have permission to view it.");
+          setDoc(null);
         }
-      } catch {
-        populateForm(DEMO_DETAIL);
+      } catch (err: any) {
+        setError(err?.message || "Failed to load document.");
+        setDoc(null);
       } finally {
         setLoading(false);
       }
@@ -307,9 +219,9 @@ export default function DocumentReviewPage() {
 
     // Also attempt fetching download preview url
     async function loadDownloadUrl() {
-      if (!docId || !orgId) return;
+      if (!docId || !activeOrganisationId) return;
       try {
-        const res = await fetch(`${API_BASE}/api/v1/organisations/${orgId}/documents/${docId}/download`, {
+        const res = await fetch(`${API_BASE}/api/v1/organisations/${activeOrganisationId}/documents/${docId}/download`, {
           credentials: "include",
         });
         if (res.ok) {
@@ -323,7 +235,7 @@ export default function DocumentReviewPage() {
 
     loadDocument();
     loadDownloadUrl();
-  }, [docId, orgId]);
+  }, [docId, activeOrganisationId]);
 
   function populateForm(d: DocumentDetail) {
     setDocType(
@@ -425,6 +337,7 @@ export default function DocumentReviewPage() {
 
   // Convert to Phase 4 Draft Bill
   const handleCreateDraftBill = async () => {
+    if (!doc) return;
     if (!selectedSupplier && !doc.matched_contact_id) {
       alert("Please select or confirm a supplier contact.");
       return;
@@ -475,17 +388,48 @@ export default function DocumentReviewPage() {
       setActionMessage("Bill created successfully! Navigating to Phase 4 Bill...");
       router.push(`/app/purchases/bills/${createdBill.id}`);
     } catch (err: any) {
-      // Offline fallback: simulate bill creation and navigate to purchases
-      setTimeout(() => {
-        alert(
-          `Draft Bill created successfully from source document! (Offline Simulation: Bill #BILL-${invoiceNumber})`
-        );
-        router.push("/app/purchases");
-      }, 800);
+      alert(err.message || "Failed to create draft bill from document.");
     } finally {
       setCreatingBill(false);
     }
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="py-24 text-center">
+          <RefreshCw className="h-8 w-8 text-sky-500 animate-spin mx-auto mb-3" />
+          <p className="text-sm font-semibold text-slate-700">Loading document details...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error || !doc) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-md mx-auto my-16 bg-white border border-rose-200 rounded-xl p-8 text-center shadow-xs">
+          <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
+          <h2 className="text-base font-bold text-slate-900 mb-1">Document Unavailable</h2>
+          <p className="text-xs text-slate-500 mb-6">{error || "The requested document could not be found."}</p>
+          <div className="flex items-center justify-center gap-3">
+            <Link
+              href="/app/documents"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+            >
+              Back to Inbox
+            </Link>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -892,9 +836,9 @@ export default function DocumentReviewPage() {
                       {/* Visual Bank Footer */}
                       {doc.detected_bank_details && (
                         <div className="mt-8 pt-4 border-t border-slate-100 text-[10px] text-slate-500 flex justify-between">
-                          <span>Bank: {doc.detected_bank_details.bank_name || "Barclays"}</span>
-                          <span>Sort: {doc.detected_bank_details.sort_code}</span>
-                          <span>Acc: {doc.detected_bank_details.account_number}</span>
+                          <span>Bank: {doc.detected_bank_details.bank_name || "—"}</span>
+                          <span>Sort: {doc.detected_bank_details.sort_code || "—"}</span>
+                          <span>Acc: {doc.detected_bank_details.account_number || "—"}</span>
                         </div>
                       )}
                     </div>

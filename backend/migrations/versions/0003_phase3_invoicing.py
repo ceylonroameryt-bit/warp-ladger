@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = '0003_phase3_invoicing'
-down_revision = None
+down_revision = '0002_contacts'
 branch_labels = None
 depends_on = None
 

@@ -10,16 +10,10 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
-  AlertCircle,
-  Clock,
-  ArrowUpRight,
-  ShieldCheck,
-  FileText,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "00000000-0000-0000-0000-000000000001";
+import { useOrganisation } from "@/contexts/OrganisationContext";
+import { api } from "@/lib/api";
 
 interface AgedItemDetail {
   document_id: string;
@@ -66,95 +60,18 @@ interface AgedReportResponse {
   generated_at: string;
 }
 
-const DEMO_AGED_PAYABLES: AgedReportResponse = {
+const EMPTY_AGED_PAYABLES: AgedReportResponse = {
   report_type: "PAYABLES",
-  as_of_date: "2026-03-31",
+  as_of_date: new Date().toISOString().split("T")[0],
   totals: {
-    current: "14520.00",
-    days_1_30: "1200.00",
+    current: "0.00",
+    days_1_30: "0.00",
     days_31_60: "0.00",
-    days_61_90: "2500.00",
+    days_61_90: "0.00",
     days_over_90: "0.00",
-    grand_total: "18220.00",
+    grand_total: "0.00",
   },
-  contacts: [
-    {
-      contact_id: "s1",
-      contact_name: "National Power & Utilities Plc",
-      company_number: "03456789",
-      currency: "GBP",
-      current: "4200.00",
-      days_1_30: "1200.00",
-      days_31_60: "0.00",
-      days_61_90: "2500.00",
-      days_over_90: "0.00",
-      total: "7900.00",
-      items: [
-        {
-          document_id: "bill-1",
-          document_number: "BIL-000041 (INV-NP-992)",
-          reference: "HQ Electricity Feb",
-          issue_date: "2026-02-10",
-          due_date: "2026-03-11",
-          days_overdue: 20,
-          total_amount: "1200.00",
-          paid_amount: "0.00",
-          remaining_balance: "1200.00",
-          bucket: "DAYS_1_30",
-        },
-        {
-          document_id: "bill-2",
-          document_number: "BIL-000012 (INV-NP-781)",
-          reference: "Substation Upgrade",
-          issue_date: "2025-12-15",
-          due_date: "2026-01-15",
-          days_overdue: 75,
-          total_amount: "2500.00",
-          paid_amount: "0.00",
-          remaining_balance: "2500.00",
-          bucket: "DAYS_61_90",
-        },
-        {
-          document_id: "bill-3",
-          document_number: "BIL-000088 (INV-NP-104)",
-          reference: "HQ Electricity March",
-          issue_date: "2026-03-15",
-          due_date: "2026-04-15",
-          days_overdue: 0,
-          total_amount: "4200.00",
-          paid_amount: "0.00",
-          remaining_balance: "4200.00",
-          bucket: "CURRENT",
-        },
-      ],
-    },
-    {
-      contact_id: "s2",
-      contact_name: "CloudOps Infrastructure Ltd",
-      company_number: "09988776",
-      currency: "GBP",
-      current: "10320.00",
-      days_1_30: "0.00",
-      days_31_60: "0.00",
-      days_61_90: "0.00",
-      days_over_90: "0.00",
-      total: "10320.00",
-      items: [
-        {
-          document_id: "bill-4",
-          document_number: "BIL-000095 (INV-COPS-441)",
-          reference: "Dedicated Server Clusters",
-          issue_date: "2026-03-20",
-          due_date: "2026-04-20",
-          days_overdue: 0,
-          total_amount: "10320.00",
-          paid_amount: "0.00",
-          remaining_balance: "10320.00",
-          bucket: "CURRENT",
-        },
-      ],
-    },
-  ],
+  contacts: [],
   currency: "GBP",
   generated_at: new Date().toISOString(),
 };
@@ -166,38 +83,34 @@ function fmtCur(amount: number | string | undefined | null, currency = "GBP") {
 }
 
 export default function AgedPayablesPage() {
-  const [asOfDate, setAsOfDate] = useState("2026-03-31");
-  const [report, setReport] = useState<AgedReportResponse>(DEMO_AGED_PAYABLES);
-  const [loading, setLoading] = useState(false);
-  const [expandedContacts, setExpandedContacts] = useState<Record<string, boolean>>({ s1: true });
+  const { activeOrganisation, activeOrganisationId } = useOrganisation();
+  const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split("T")[0]);
+  const [report, setReport] = useState<AgedReportResponse>(EMPTY_AGED_PAYABLES);
+  const [loading, setLoading] = useState(true);
+  const [expandedContacts, setExpandedContacts] = useState<Record<string, boolean>>({});
 
   const toggleContact = (id: string) => {
     setExpandedContacts((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const fetchReport = useCallback(async () => {
+    if (!activeOrganisationId) return;
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(
-        `${API_BASE}/api/v1/organisations/${ORG_ID}/reports/aged-payables?as_of_date=${asOfDate}`,
-        { headers }
+      const data = await api.get<AgedReportResponse>(
+        `/api/v1/organisations/${activeOrganisationId}/reports/aged-payables?as_of_date=${asOfDate}`
       );
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.totals !== undefined) {
-          setReport(data);
-        }
+      if (data && data.totals) {
+        setReport(data);
+      } else {
+        setReport(EMPTY_AGED_PAYABLES);
       }
-    } catch (err) {
-      console.warn("Using demo aged payables data", err);
+    } catch {
+      setReport(EMPTY_AGED_PAYABLES);
     } finally {
       setLoading(false);
     }
-  }, [asOfDate]);
+  }, [activeOrganisationId, asOfDate]);
 
   useEffect(() => {
     fetchReport();
@@ -205,11 +118,12 @@ export default function AgedPayablesPage() {
 
   const handleExportCSV = () => {
     const rows = [
-      ["Aged Payables (Creditors Aging Schedule)"],
+      ["Aged Payables (Creditors Aging Report)"],
+      [`Entity: ${activeOrganisation?.name || "Warp Organisation"}`],
       [`As of Date: ${report.as_of_date}`],
       [`Currency: ${report.currency}`],
       [],
-      ["Supplier Name", "Company Number", "Current (£)", "1-30 Days (£)", "31-60 Days (£)", "61-90 Days (£)", ">90 Days (£)", "Total (£)"],
+      ["Supplier Name", "Company No", "Current (£)", "1-30 Days (£)", "31-60 Days (£)", "61-90 Days (£)", ">90 Days (£)", "Total Payable (£)"],
       ...report.contacts.map((c) => [
         `"${c.contact_name.replace(/"/g, '""')}"`,
         c.company_number || "",
@@ -221,7 +135,7 @@ export default function AgedPayablesPage() {
         Number(c.total).toFixed(2),
       ]),
       [
-        '"GRAND TOTAL"',
+        '"TOTAL"',
         '""',
         Number(report.totals.current).toFixed(2),
         Number(report.totals.days_1_30).toFixed(2),
@@ -236,7 +150,7 @@ export default function AgedPayablesPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `aged_payables_as_of_${report.as_of_date}.csv`);
+    link.setAttribute("download", `aged_payables_${report.as_of_date}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -257,10 +171,10 @@ export default function AgedPayablesPage() {
             </div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
               <Building2 className="h-6 w-6 text-amber-600" />
-              Aged Payables (Creditors Aging Schedule)
+              Aged Payables (Creditors Aging)
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Outstanding supplier bills and liabilities categorised by payment due date.
+              Outstanding supplier liabilities broken down by payment due dates and aging brackets.
             </p>
           </div>
 
@@ -313,7 +227,7 @@ export default function AgedPayablesPage() {
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Current</span>
             <div className="mt-1">
               <span className="text-lg font-bold font-mono text-emerald-600">
-                {fmtCur(report.totals.current)}
+                {fmtCur(report.totals.current, report.currency)}
               </span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">Not yet due</p>
@@ -323,47 +237,47 @@ export default function AgedPayablesPage() {
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">1 - 30 Days</span>
             <div className="mt-1">
               <span className="text-lg font-bold font-mono text-amber-600">
-                {fmtCur(report.totals.days_1_30)}
+                {fmtCur(report.totals.days_1_30, report.currency)}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Overdue 1-30d</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Due in 1-30d</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-sm">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">31 - 60 Days</span>
             <div className="mt-1">
               <span className="text-lg font-bold font-mono text-orange-600">
-                {fmtCur(report.totals.days_31_60)}
+                {fmtCur(report.totals.days_31_60, report.currency)}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Overdue 31-60d</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Payment pending</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-sm">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">61 - 90 Days</span>
             <div className="mt-1">
               <span className="text-lg font-bold font-mono text-rose-600">
-                {fmtCur(report.totals.days_61_90)}
+                {fmtCur(report.totals.days_61_90, report.currency)}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Critical overdue</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Overdue</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-sm">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">&gt; 90 Days</span>
             <div className="mt-1">
               <span className="text-lg font-bold font-mono text-purple-700">
-                {fmtCur(report.totals.days_over_90)}
+                {fmtCur(report.totals.days_over_90, report.currency)}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">Old balance</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Critically overdue</p>
           </div>
 
           <div className="bg-slate-900 text-white rounded-xl border border-slate-800 p-3.5 shadow-sm">
             <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">Grand Total</span>
             <div className="mt-1">
-              <span className="text-lg font-black font-mono text-amber-400">
-                {fmtCur(report.totals.grand_total)}
+              <span className="text-lg font-black font-mono text-sky-400">
+                {fmtCur(report.totals.grand_total, report.currency)}
               </span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">Total payable</p>
@@ -378,7 +292,7 @@ export default function AgedPayablesPage() {
                 Supplier Aging Analysis & Bill Breakdown
               </h2>
               <p className="text-xs text-slate-500">
-                Click any supplier row to inspect specific unpaid bills, external invoice numbers, and payment schedules
+                {activeOrganisation?.name || "Organisation"} — as of {report.as_of_date}
               </p>
             </div>
             <span className="text-[11px] font-medium text-slate-400">
@@ -400,13 +314,21 @@ export default function AgedPayablesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {report.contacts.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      No outstanding payables recorded as of this date.
+                    </td>
+                  </tr>
+                )}
+
                 {report.contacts.map((contact) => {
                   const isExpanded = !!expandedContacts[contact.contact_id];
                   return (
                     <React.Fragment key={contact.contact_id}>
                       <tr
                         onClick={() => toggleContact(contact.contact_id)}
-                        className="hover:bg-amber-50/40 cursor-pointer transition-colors group"
+                        className="hover:bg-sky-50/50 cursor-pointer transition-colors group"
                       >
                         <td className="py-3 px-6">
                           <div className="flex items-center gap-2">
@@ -428,73 +350,70 @@ export default function AgedPayablesPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4 font-mono text-right text-slate-700">
-                          {fmtCur(contact.current)}
+                          {fmtCur(contact.current, report.currency)}
                         </td>
                         <td className="py-3 px-4 font-mono text-right text-slate-700">
-                          {fmtCur(contact.days_1_30)}
+                          {fmtCur(contact.days_1_30, report.currency)}
                         </td>
                         <td className="py-3 px-4 font-mono text-right text-slate-700">
-                          {fmtCur(contact.days_31_60)}
+                          {fmtCur(contact.days_31_60, report.currency)}
                         </td>
                         <td className="py-3 px-4 font-mono text-right text-slate-700">
-                          {fmtCur(contact.days_61_90)}
+                          {fmtCur(contact.days_61_90, report.currency)}
                         </td>
                         <td className="py-3 px-4 font-mono text-right text-slate-700">
-                          {fmtCur(contact.days_over_90)}
+                          {fmtCur(contact.days_over_90, report.currency)}
                         </td>
                         <td className="py-3 px-6 font-mono text-right font-black text-slate-900">
-                          {fmtCur(contact.total)}
+                          {fmtCur(contact.total, report.currency)}
                         </td>
                       </tr>
 
-                      {/* Expandable Bill Drill-Down */}
-                      {isExpanded && (
-                        <tr className="bg-slate-50/80">
+                      {/* Expanded Subledger Bill List */}
+                      {isExpanded && contact.items && contact.items.length > 0 && (
+                        <tr className="bg-slate-50/70 border-y border-slate-200">
                           <td colSpan={7} className="py-3 px-8">
-                            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
-                              <table className="w-full text-left text-[11px]">
-                                <thead className="bg-slate-100/80 text-slate-500 font-semibold border-b border-slate-200">
-                                  <tr>
-                                    <th className="py-2 px-4">Internal Bill # / Inv #</th>
-                                    <th className="py-2 px-3">Reference</th>
-                                    <th className="py-2 px-3">Bill Date</th>
-                                    <th className="py-2 px-3">Due Date</th>
-                                    <th className="py-2 px-3">Overdue</th>
-                                    <th className="py-2 px-3 text-right">Total Gross</th>
-                                    <th className="py-2 px-3 text-right">Paid</th>
-                                    <th className="py-2 px-4 text-right font-bold">Remaining</th>
+                            <div className="rounded-lg bg-white border border-slate-200 p-3 shadow-xs">
+                              <h5 className="text-[11px] font-bold text-slate-700 mb-2 uppercase tracking-wider">
+                                Subledger Bills for {contact.contact_name}
+                              </h5>
+                              <table className="w-full text-left text-xs">
+                                <thead>
+                                  <tr className="text-[10px] text-slate-500 font-semibold border-b border-slate-100 pb-1">
+                                    <th className="py-1">Bill Number</th>
+                                    <th className="py-1">Issue Date</th>
+                                    <th className="py-1">Due Date</th>
+                                    <th className="py-1">Days Overdue</th>
+                                    <th className="py-1 text-right">Bill Total</th>
+                                    <th className="py-1 text-right">Paid</th>
+                                    <th className="py-1 text-right font-bold">Remaining Balance</th>
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {contact.items.map((bill) => (
-                                    <tr key={bill.document_id} className="hover:bg-slate-50">
-                                      <td className="py-2 px-4 font-mono font-semibold text-[#0073B7]">
-                                        <Link href={`/app/purchases/bills`}>
-                                          {bill.document_number}
+                                <tbody className="divide-y divide-slate-50 text-[11px]">
+                                  {contact.items.map((item) => (
+                                    <tr key={item.document_id} className="hover:bg-slate-50">
+                                      <td className="py-1.5 font-mono font-semibold text-[#0073B7]">
+                                        <Link href={`/app/purchases/bills/${item.document_id}`}>
+                                          {item.document_number}
                                         </Link>
                                       </td>
-                                      <td className="py-2 px-3 text-slate-600">{bill.reference || "—"}</td>
-                                      <td className="py-2 px-3 font-mono text-slate-500">{bill.issue_date}</td>
-                                      <td className="py-2 px-3 font-mono text-slate-500">{bill.due_date}</td>
-                                      <td className="py-2 px-3">
-                                        {bill.days_overdue > 0 ? (
-                                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                                            {bill.days_overdue} days
-                                          </span>
+                                      <td className="py-1.5 text-slate-600 font-mono">{item.issue_date}</td>
+                                      <td className="py-1.5 text-slate-600 font-mono">{item.due_date}</td>
+                                      <td className="py-1.5">
+                                        {item.days_overdue > 0 ? (
+                                          <span className="text-rose-600 font-semibold">{item.days_overdue} days</span>
                                         ) : (
-                                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                            Current
-                                          </span>
+                                          <span className="text-emerald-600">Current</span>
                                         )}
                                       </td>
-                                      <td className="py-2 px-3 font-mono text-slate-600 text-right">
-                                        {fmtCur(bill.total_amount)}
+                                      <td className="py-1.5 text-right font-mono text-slate-600">
+                                        {fmtCur(item.total_amount, report.currency)}
                                       </td>
-                                      <td className="py-2 px-3 font-mono text-slate-600 text-right">
-                                        {fmtCur(bill.paid_amount)}
+                                      <td className="py-1.5 text-right font-mono text-slate-600">
+                                        {fmtCur(item.paid_amount, report.currency)}
                                       </td>
-                                      <td className="py-2 px-4 font-mono text-right font-bold text-slate-900">
-                                        {fmtCur(bill.remaining_balance)}
+                                      <td className="py-1.5 text-right font-mono font-bold text-slate-900">
+                                        {fmtCur(item.remaining_balance, report.currency)}
                                       </td>
                                     </tr>
                                   ))}
@@ -507,29 +426,6 @@ export default function AgedPayablesPage() {
                     </React.Fragment>
                   );
                 })}
-
-                {/* ── GRAND TOTALS FOOTER ── */}
-                <tr className="bg-slate-100/90 font-black border-t-2 border-slate-300 text-slate-900 text-xs">
-                  <td className="py-3 px-6 uppercase tracking-wider">GRAND TOTAL</td>
-                  <td className="py-3 px-4 font-mono text-right text-emerald-700">
-                    {fmtCur(report.totals.current)}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-right text-amber-700">
-                    {fmtCur(report.totals.days_1_30)}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-right text-orange-700">
-                    {fmtCur(report.totals.days_31_60)}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-right text-rose-700">
-                    {fmtCur(report.totals.days_61_90)}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-right text-purple-800">
-                    {fmtCur(report.totals.days_over_90)}
-                  </td>
-                  <td className="py-3 px-6 font-mono text-right text-sm text-slate-950">
-                    {fmtCur(report.totals.grand_total)}
-                  </td>
-                </tr>
               </tbody>
             </table>
           </div>

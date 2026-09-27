@@ -662,6 +662,10 @@ class BillService:
         db.add(event)
         await db.flush()
 
+        # ── General Ledger Posting ────────────────────────────
+        from app.ledger.posting_service import AccountingPostingService
+        await AccountingPostingService.post_bill_to_ledger(db, bill, user_id)
+
         await AuditService.log_static(
             db,
             action="BILL_APPROVED",
@@ -755,6 +759,10 @@ class BillService:
         bill.amount_due = Decimal("0")
 
         await db.flush()
+
+        # ── General Ledger Reversal ───────────────────────────
+        from app.ledger.posting_service import AccountingPostingService
+        await AccountingPostingService.reverse_bill_journal(db, bill, user_id, reason.strip())
 
         await AuditService.log_static(
             db,
@@ -905,12 +913,16 @@ class BillService:
         )
         bills = result.scalars().all()
 
+        draft_count = 0
+        draft_amt = Decimal("0")
         awaiting_app_count = 0
         awaiting_app_amt = Decimal("0")
         awaiting_pay_count = 0
         awaiting_pay_amt = Decimal("0")
         overdue_count = 0
         overdue_amt = Decimal("0")
+        paid_count = 0
+        paid_amt = Decimal("0")
         this_month_count = 0
         this_month_amt = Decimal("0")
 
@@ -923,13 +935,23 @@ class BillService:
                 this_month_count += 1
                 this_month_amt += Decimal(str(b.total))
 
+            # Draft
+            if b.status == BillStatus.DRAFT:
+                draft_count += 1
+                draft_amt += Decimal(str(b.total))
+
             # Awaiting approval
-            if b.status == BillStatus.AWAITING_APPROVAL:
+            elif b.status == BillStatus.AWAITING_APPROVAL:
                 awaiting_app_count += 1
                 awaiting_app_amt += Decimal(str(b.total))
 
+            # Paid
+            elif b.status == BillStatus.PAID:
+                paid_count += 1
+                paid_amt += Decimal(str(b.total))
+
             # Approved / Awaiting Payment or Overdue
-            if b.status in (BillStatus.APPROVED, BillStatus.AWAITING_PAYMENT):
+            elif b.status in (BillStatus.APPROVED, BillStatus.AWAITING_PAYMENT):
                 due = b.due_date
                 if due.tzinfo is None:
                     due = due.replace(tzinfo=UTC)
@@ -941,12 +963,22 @@ class BillService:
                     awaiting_pay_amt += Decimal(str(b.amount_due))
 
         return PurchasesMetricsResponse(
+            draft_count=draft_count,
+            draft_amount=draft_amt,
+            draft_total=f"{draft_amt:.2f}",
             awaiting_approval_count=awaiting_app_count,
             awaiting_approval_amount=awaiting_app_amt,
+            awaiting_approval_total=f"{awaiting_app_amt:.2f}",
             awaiting_payment_count=awaiting_pay_count,
             awaiting_payment_amount=awaiting_pay_amt,
+            awaiting_payment_total=f"{awaiting_pay_amt:.2f}",
             overdue_count=overdue_count,
             overdue_amount=overdue_amt,
+            overdue_total=f"{overdue_amt:.2f}",
+            paid_count=paid_count,
+            paid_amount=paid_amt,
+            paid_total=f"{paid_amt:.2f}",
             this_month_count=this_month_count,
             this_month_amount=this_month_amt,
         )
+

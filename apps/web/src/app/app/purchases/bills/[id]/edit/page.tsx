@@ -25,8 +25,9 @@ import BillLineEditor, {
   calcBillLine,
 } from "@/components/BillLineEditor";
 
+import { useOrganisation } from "@/contexts/OrganisationContext";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID || "";
 
 interface PaymentTermOption {
   id: string;
@@ -87,26 +88,8 @@ export default function EditBillPage() {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [activeOrgId, setActiveOrgId] = useState(ORG_ID);
-
-  useEffect(() => {
-    async function resolveOrg() {
-      try {
-        const res = await fetch("/api/v1/organisations/", { credentials: "include" });
-        if (res.ok) {
-          const orgs = await res.json();
-          if (orgs.length > 0) {
-            setActiveOrgId(orgs[0].id);
-          }
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    resolveOrg();
-  }, []);
-
-  const orgId = activeOrgId || ORG_ID;
+  const { activeOrganisationId } = useOrganisation();
+  const orgId = activeOrganisationId || "";
 
   // 1. Fetch Tax Rates & Payment Terms
   useEffect(() => {
