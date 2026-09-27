@@ -22,12 +22,27 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    """Read DATABASE_URL from environment (overrides alembic.ini)."""
+    """Read DATABASE_URL from environment (overrides alembic.ini).
+
+    The async migration engine (async_engine_from_config) requires asyncpg,
+    so we must keep the +asyncpg driver specifier.  If DATABASE_URL was set
+    with a bare 'postgresql://' URL (no driver suffix), we add +asyncpg so
+    that the async engine can connect correctly.
+    """
     import os
 
     url = os.environ.get("DATABASE_URL", "")
-    # asyncpg driver is needed at runtime but alembic uses sync psycopg2 for migrations
-    return url.replace("+asyncpg", "")
+    if not url:
+        # Fall back to alembic.ini sqlalchemy.url – returned as-is so
+        # alembic's own config loading can handle it.
+        return url
+    # Normalise: bare postgresql:// → postgresql+asyncpg://
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Also handle postgresql+psycopg2:// → postgresql+asyncpg://
+    if "postgresql+psycopg2://" in url:
+        url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:

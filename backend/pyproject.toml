@@ -81,6 +81,7 @@ dev = [
     "mypy>=1.13.0",
     "types-redis>=4.6.0",
     "freezegun>=1.5.0",
+    "aiosqlite>=0.20.0",  # async SQLite driver for in-memory test DB
 ]
 
 [tool.hatch.build.targets.wheel]
